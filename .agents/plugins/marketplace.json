@@ -1,0 +1,16 @@
+{
+  "name": "context-saver",
+  "plugins": [
+    {
+      "name": "thread-tree",
+      "source": {
+        "source": "local",
+        "path": "./plugins/thread-tree"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
+    }
+  ]
+}

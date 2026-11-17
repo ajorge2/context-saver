@@ -1,0 +1,6 @@
+# The SQLite pipeline remains usable without optional clustering packages.
+# FastEmbed and USearch are the pinned local production retrieval runtime.
+fastembed==0.9.1
+usearch==2.26.6
+moss
+bertopic>=0.17.4,<1

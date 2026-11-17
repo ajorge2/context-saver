@@ -1,0 +1,13 @@
+{
+  "name": "context-saver",
+  "owner": {
+    "name": "Andrew Jorge"
+  },
+  "plugins": [
+    {
+      "name": "thread-tree",
+      "source": "./plugins/thread-tree"
+    }
+  ],
+  "description": "Context Saver for coding-agent projects"
+}

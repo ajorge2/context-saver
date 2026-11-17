@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>Globe Scroll Demo</title>
+    <link rel="stylesheet" href="/exact-demo.css?v=20261117-message-browse" />
+  </head>
+  <body>
+    <button class="connections-launcher" type="button" aria-label="Manage connections" title="Manage connections" data-connections-launcher>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="7" cy="7" r="2.4"></circle>
+        <circle cx="17" cy="7" r="2.4"></circle>
+        <circle cx="12" cy="17" r="2.4"></circle>
+        <path d="m9.2 8.1 2 6.4M14.8 8.1l-2 6.4M9.4 7h5.2"></path>
+      </svg>
+    </button>
+
+    <div class="connections-overlay" data-connections-overlay hidden>
+      <section class="connections-dialog" role="dialog" aria-modal="true" aria-labelledby="connections-title" aria-describedby="connections-description">
+        <header class="connections-dialog__header">
+          <div class="connections-dialog__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="7" cy="7" r="2.4"></circle><circle cx="17" cy="7" r="2.4"></circle><circle cx="12" cy="17" r="2.4"></circle><path d="m9.2 8.1 2 6.4M14.8 8.1l-2 6.4M9.4 7h5.2"></path></svg>
+          </div>
+          <div>
+            <h2 id="connections-title">Connections</h2>
+            <p id="connections-description">Choose which project folders and chats Context Saver can keep learning from.</p>
+          </div>
+          <button class="connections-icon-button" type="button" aria-label="Close connections" data-connections-close>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+          </button>
+        </header>
+
+        <div class="connections-tabs" role="tablist" aria-label="Connection status">
+          <button class="connections-tab is-active" type="button" role="tab" aria-selected="true" data-connections-tab="connected">Connected <span data-connections-count="connected">0</span></button>
+          <button class="connections-tab" type="button" role="tab" aria-selected="false" data-connections-tab="paused">Paused <span data-connections-count="paused">0</span></button>
+        </div>
+
+        <div class="connections-body">
+          <div class="connections-refresh-notice" data-connections-refresh-notice hidden>
+            <p role="status" data-connections-refresh-notice-message></p>
+            <button class="connections-action" type="button" data-connections-refresh-retry>Retry memory update</button>
+          </div>
+          <div class="connections-status" role="status" data-connections-status>Loading connections…</div>
+          <div class="connections-list" data-connections-list></div>
+        </div>
+        <footer class="connections-dialog__footer">
+          <span>The index stays on this device. Lookups share matching excerpts with your coding agent session.</span>
+          <button class="connections-done" type="button" data-connections-close>Done</button>
+        </footer>
+      </section>
+    </div>
+
+    <div class="connections-overlay connections-confirm-overlay" data-connections-confirm-overlay hidden>
+      <section class="connections-confirm" role="alertdialog" aria-modal="true" aria-labelledby="connections-confirm-title" aria-describedby="connections-confirm-description">
+        <div class="connections-confirm__warning" aria-hidden="true" data-connections-confirm-icon>
+          <svg viewBox="0 0 24 24"><path d="M12 8v5M12 17h.01"></path><path d="M10.2 4.3 2.8 17a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.8 4.3a2 2 0 0 0-3.6 0Z"></path></svg>
+        </div>
+        <h2 id="connections-confirm-title" aria-live="polite" data-connections-confirm-title>Disconnect this connection?</h2>
+        <p id="connections-confirm-description" data-connections-confirm-copy></p>
+        <div class="connections-confirm__note" data-connections-confirm-note></div>
+        <div class="connections-confirm__note" role="alert" data-connections-confirm-error hidden></div>
+        <div class="connections-confirm__actions">
+          <button class="connections-cancel" type="button" data-connections-confirm-cancel>Keep connected</button>
+          <button class="connections-disconnect" type="button" data-connections-confirm>Disconnect</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="connection-refresh-overlay" role="status" aria-live="assertive" aria-label="Refreshing Context Saver" tabindex="-1" data-connection-refresh-overlay hidden>
+      <div class="connection-refresh-loader">
+        <i class="connection-refresh-loader__shape" aria-hidden="true"></i>
+        <strong data-connection-refresh-message>Updating your memory…</strong>
+        <span>Please keep Context Saver open.</span>
+      </div>
+    </div>
+
+    <main id="graph-shell" class="scroll-page" aria-label="Globe scroll demo">
+      <div class="ambient-background" aria-hidden="true" data-ambient-background>
+        <canvas class="chrome-arcs-canvas" data-chrome-arcs></canvas>
+      </div>
+      <div class="scroll-progress" aria-hidden="true"><div class="scroll-progress__value"></div></div>
+      <nav class="section-nav" aria-label="Page sections"><div class="section-nav__stack">
+        <div class="section-nav__line" aria-hidden="true"></div>
+        <button class="section-nav__dot" type="button" data-section-index="0" aria-label="Go to Welcome"></button>
+        <button class="section-nav__dot" type="button" data-section-index="1" aria-label="Go to Subjects"></button>
+        <button class="section-nav__dot" type="button" data-section-index="2" aria-label="Go to Broad Topics"></button>
+        <button class="section-nav__dot" type="button" data-section-index="3" aria-label="Go to Specific Topics"></button>
+        <button class="section-nav__dot" type="button" data-section-index="4" aria-label="Go to Specific Messages"></button>
+      </div></nav>
+
+      <svg class="edge-lens-definitions" aria-hidden="true" width="0" height="0">
+        <filter id="edge-glass-filter-top" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+          <feImage
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="none"
+            result="edge-glass-map"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='rgb(128,128,225)'/%3E%3Cstop offset='35%25' stop-color='rgb(128,128,185)'/%3E%3Cstop offset='65%25' stop-color='rgb(128,128,150)'/%3E%3Cstop offset='100%25' stop-color='rgb(128,128,128)'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1' height='100' fill='url(%23g)'/%3E%3C/svg%3E"
+          />
+          <feDisplacementMap in="SourceGraphic" in2="edge-glass-map" scale="74" xChannelSelector="R" yChannelSelector="B" result="warped-edge" />
+          <feGaussianBlur in="warped-edge" stdDeviation="0.65" result="softened-edge" />
+          <feImage
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="none"
+            result="edge-blur-mask"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='white' stop-opacity='.38'/%3E%3Cstop offset='45%25' stop-color='white' stop-opacity='.12'/%3E%3Cstop offset='100%25' stop-color='white' stop-opacity='0'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1' height='100' fill='url(%23g)'/%3E%3C/svg%3E"
+          />
+          <feComposite in="softened-edge" in2="edge-blur-mask" operator="in" result="soft-edge" />
+          <feComposite in="warped-edge" in2="edge-blur-mask" operator="out" result="clear-edge" />
+          <feMerge><feMergeNode in="clear-edge" /><feMergeNode in="soft-edge" /></feMerge>
+        </filter>
+        <filter id="edge-glass-filter-bottom" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB">
+          <feImage
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="none"
+            result="edge-glass-map"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='rgb(128,128,128)'/%3E%3Cstop offset='35%25' stop-color='rgb(128,128,106)'/%3E%3Cstop offset='65%25' stop-color='rgb(128,128,71)'/%3E%3Cstop offset='100%25' stop-color='rgb(128,128,31)'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1' height='100' fill='url(%23g)'/%3E%3C/svg%3E"
+          />
+          <feDisplacementMap in="SourceGraphic" in2="edge-glass-map" scale="74" xChannelSelector="R" yChannelSelector="B" result="warped-edge" />
+          <feGaussianBlur in="warped-edge" stdDeviation="0.65" result="softened-edge" />
+          <feImage
+            x="0"
+            y="0"
+            width="100%"
+            height="100%"
+            preserveAspectRatio="none"
+            result="edge-blur-mask"
+            href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1 100' preserveAspectRatio='none'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0%25' stop-color='white' stop-opacity='0'/%3E%3Cstop offset='55%25' stop-color='white' stop-opacity='.12'/%3E%3Cstop offset='100%25' stop-color='white' stop-opacity='.38'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='1' height='100' fill='url(%23g)'/%3E%3C/svg%3E"
+          />
+          <feComposite in="softened-edge" in2="edge-blur-mask" operator="in" result="soft-edge" />
+          <feComposite in="warped-edge" in2="edge-blur-mask" operator="out" result="clear-edge" />
+          <feMerge><feMergeNode in="clear-edge" /><feMergeNode in="soft-edge" /></feMerge>
+        </filter>
+      </svg>
+
+      <div class="sections-viewport" data-sections-viewport>
+        <div class="sections-track" data-sections-track>
+
+      <section class="demo-section demo-section--left" id="hero" data-section="0"><div class="section-copy">
+        <h1 class="section-title"><div class="section-title__main">Context Saver</div><div class="section-title__subtitle">By Andrew Jorge</div></h1>
+        <aside class="combobox-demo combobox-demo--hero" aria-label="Project selector" data-hero-combobox></aside>
+        <div class="apple-spotlight" data-spotlight>
+          <div class="spotlight-shell">
+            <div class="spotlight-panel">
+              <div class="spotlight-input-row">
+                <svg class="spotlight-search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+                <div class="spotlight-input-wrap">
+                  <span class="spotlight-placeholder" data-spotlight-placeholder>Search Context</span>
+                  <input type="search" aria-label="Search Context" autocomplete="off" data-spotlight-input />
+                </div>
+              </div>
+              <div class="spotlight-results" data-spotlight-results hidden></div>
+            </div>
+            <div class="spotlight-shortcuts" aria-label="Search shortcuts">
+              <button class="spotlight-shortcut" type="button" aria-label="Search specific messages only" aria-pressed="false" title="Search specific messages only" data-message-search-toggle>
+                <span class="spotlight-shortcut__letter" aria-hidden="true">M</span>
+              </button>
+            </div>
+          </div>
+          <p class="spotlight-error" role="status" data-spotlight-error></p>
+        </div>
+      </div></section>
+
+      <section class="demo-section demo-section--left" id="discovery-two" data-section="1"><div class="section-copy">
+        <h2 class="section-title"><div class="section-title__main">Subjects</div></h2>
+        <div class="feature-list">
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Insight</span><h3>Limitless Exploration</h3><p>Discover new dimensions of possibility and innovation</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Continuity</span><h3>Seamless Integration</h3><p>Where cutting-edge technology meets human intuition</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Structure</span><h3>Future-Ready Solutions</h3><p>Built for tomorrow's challenges and opportunities</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Recall</span><h3>Adaptive Context</h3><p>Keep the most relevant details available as conversations evolve</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Sources</span><h3>Source-Aware Memory</h3><p>Trace recovered context back to the conversation that produced it</p></div></article>
+        </div>
+      </div></section>
+
+      <section class="demo-section demo-section--left" id="discovery" data-section="2"><div class="section-copy">
+        <h2 class="section-title"><div class="section-title__main">Broad Topics</div></h2>
+        <div class="feature-list">
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Insight</span><h3>Limitless Exploration</h3><p>Discover new dimensions of possibility and innovation</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Continuity</span><h3>Seamless Integration</h3><p>Where cutting-edge technology meets human intuition</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Structure</span><h3>Future-Ready Solutions</h3><p>Built for tomorrow's challenges and opportunities</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Recall</span><h3>Adaptive Context</h3><p>Keep the most relevant details available as conversations evolve</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Sources</span><h3>Source-Aware Memory</h3><p>Trace recovered context back to the conversation that produced it</p></div></article>
+        </div>
+      </div></section>
+
+      <section class="demo-section demo-section--left" id="discovery-four" data-section="3"><div class="section-copy">
+        <h2 class="section-title"><div class="section-title__main">Specific Topics</div></h2>
+        <div class="feature-list">
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Insight</span><h3>Limitless Exploration</h3><p>Discover new dimensions of possibility and innovation</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Continuity</span><h3>Seamless Integration</h3><p>Where cutting-edge technology meets human intuition</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Structure</span><h3>Future-Ready Solutions</h3><p>Built for tomorrow's challenges and opportunities</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Recall</span><h3>Adaptive Context</h3><p>Keep the most relevant details available as conversations evolve</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Sources</span><h3>Source-Aware Memory</h3><p>Trace recovered context back to the conversation that produced it</p></div></article>
+        </div>
+      </div></section>
+
+      <section class="demo-section demo-section--left" id="discovery-five" data-section="4"><div class="section-copy">
+        <h2 class="section-title"><div class="section-title__main">Specific Messages</div></h2>
+        <div class="feature-list">
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Insight</span><h3>Limitless Exploration</h3><p>Discover new dimensions of possibility and innovation</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Continuity</span><h3>Seamless Integration</h3><p>Where cutting-edge technology meets human intuition</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Structure</span><h3>Future-Ready Solutions</h3><p>Built for tomorrow's challenges and opportunities</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Recall</span><h3>Adaptive Context</h3><p>Keep the most relevant details available as conversations evolve</p></div></article>
+          <article class="feature-card"><i></i><div><span class="feature-eyebrow">Sources</span><h3>Source-Aware Memory</h3><p>Trace recovered context back to the conversation that produced it</p></div></article>
+        </div>
+      </div></section>
+        </div>
+      </div>
+    </main>
+    <div class="scroll-spacer" aria-hidden="true" data-scroll-spacer></div>
+
+    <div class="node-detail-overlay" data-node-detail-overlay hidden>
+      <section class="node-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="node-detail-title" tabindex="-1">
+        <header class="node-detail-header">
+          <span class="node-detail-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M6 5h12v5H6zM4 14h7v5H4zM15 14h5v5h-5zM12 10v2M7.5 12h9M7.5 12v2M16.5 12v2"/></svg>
+          </span>
+          <div class="node-detail-heading">
+            <span class="node-detail-layer" data-node-detail-layer>Context node</span>
+            <h2 id="node-detail-title" data-node-detail-title>Loading details…</h2>
+          </div>
+          <button class="node-detail-close" type="button" aria-label="Close details" data-node-detail-close>×</button>
+        </header>
+        <div class="node-detail-content" data-node-detail-content role="region" aria-label="Conversation details" aria-live="polite" tabindex="0"></div>
+        <footer class="node-detail-footer">
+          <span>The index stays on this device.</span>
+          <button type="button" data-node-detail-done>Done</button>
+        </footer>
+      </section>
+    </div>
+
+    <script src="/chrome-arcs-background.js?v=20261117-chrome-arcs" defer></script>
+    <script src="/context-explorer-model.js?v=20261117-context-explorer" defer></script>
+    <script src="/exact-demo.js?v=20261117-welcome-reload" defer></script>
+  </body>
+</html>

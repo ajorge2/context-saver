@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "thread-tree": {
+      "command": "/bin/sh",
+      "cwd": ".",
+      "args": [
+        "-c",
+        "case \"$1\" in /*) cd \"$1\" || exit 1;; esac; exec uv run --no-project --with mcp==1.26.0 --with fastembed==0.9.1 --with usearch==2.26.6 python server/thread_tree_mcp.py stdio",
+        "context-saver-mcp",
+        "${CLAUDE_PLUGIN_ROOT}"
+      ]
+    }
+  }
+}

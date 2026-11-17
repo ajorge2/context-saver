@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "name": "granite-small-english-r2-int8-pc-v1",
+  "base_model": "ibm-granite/granite-embedding-small-english-r2",
+  "base_license": "Apache-2.0",
+  "onnx_source": "onnx-community/granite-embedding-small-english-r2-ONNX",
+  "onnx_source_revision": "1dc7835ba0cb9c76a3618d0bf0c427c97671b3c8",
+  "fastembed_model_name": "ibm-granite/granite-embedding-small-english-r2",
+  "dimension": 384,
+  "quantization": {
+    "tool": "onnxruntime.quantization.quantize_dynamic",
+    "weight_type": "QInt8",
+    "per_channel": true
+  },
+  "model_file": "onnx/model.onnx",
+  "model_sha256": "38842c5f27286dbe97d0674f1618def6cc7adf20d70e66923cbd7e34767155b4",
+  "validation": {
+    "date": "2026-11-16",
+    "platform": "arm64 macOS 26.5.1",
+    "python": "3.12.13",
+    "fastembed": "0.9.1",
+    "onnxruntime": "1.32.0",
+    "peak_rss_mib": 455.78,
+    "cold_start_seconds": 0.1805,
+    "warm_query_p95_ms": 4.898
+  }
+}

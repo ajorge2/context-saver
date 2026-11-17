@@ -1,0 +1,42 @@
+{
+  "description": "Stage prompts, finalize completed turns, and recover missed work before compaction.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/user_prompt_submit.py\"",
+            "timeout": 3,
+            "statusMessage": "Staging Context Saver prompt"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop.py\"",
+            "timeout": 5,
+            "statusMessage": "Queuing Context Saver turn"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual|auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/pre_compact.py\"",
+            "timeout": 10,
+            "statusMessage": "Recovering Context Saver turns"
+          }
+        ]
+      }
+    ]
+  }
+}
