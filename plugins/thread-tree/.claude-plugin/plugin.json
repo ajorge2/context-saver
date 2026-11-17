@@ -1,7 +1,7 @@
 {
   "name": "thread-tree",
-  "version": "0.1.18",
-  "description": "Context Saver preserves local coding-project context and exposes grounded history search.",
+  "version": "0.1.19",
+  "description": "Open the Context Saver viewer to browse connected coding chats and recover earlier decisions with their sources.",
   "author": {
     "name": "Andrew Jorge"
   }

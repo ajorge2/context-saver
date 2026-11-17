@@ -1,9 +1,9 @@
 # Context Saver
 
-Context Saver saves searchable context from coding chats you activate in Codex and Claude Code. Use it to recover an earlier project decision with its source.
+Context Saver is a plugin for Codex and Claude Code on macOS. Use the browser viewer to explore your saved chats, or ask your coding agent to recover an earlier decision with its source.
 
-Requires macOS, Python 3.12 and `uv` on the coding client's PATH. To open the local viewer from the package directory, run `python3 scripts/thread_tree.py serve --open`.
+In Codex, attach **Context Saver** and send **Open Context Saver**. In Claude Code, run `/thread-tree:context-saver Open Context Saver`.
 
 The index is stored on the device. Lookup excerpts enter the configured coding agent session.
 
-[Installation and usage](https://github.com/ajorge2/context-saver#install-on-macos)
+[Install Context Saver](https://github.com/ajorge2/context-saver#install-on-macos) · [Open the viewer](https://github.com/ajorge2/context-saver#open-the-viewer)
