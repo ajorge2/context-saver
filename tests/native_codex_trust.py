@@ -223,8 +223,17 @@ def inspect_hook(project: Path, environment: dict[str, str], profile: Path,
                       "Inspecting the untrusted native hook command")
     finally:
         # Text such as /exit contains the /hooks trust-all shortcut. Close the
-        # terminal without sending text into a view whose state may change.
-        terminal.close(entered=False)
+        # popup with Ctrl+C, then request Codex's shutdown-first exit with a
+        # second Ctrl+C. This releases its Git workers before deleting fixtures.
+        try:
+            if terminal.alive():
+                terminal.send("\x03")
+                time.sleep(0.3)
+                if terminal.alive():
+                    terminal.send("\x03")
+                terminal.wait(lambda: not terminal.alive(), "Gracefully closing the native Codex session", timeout=20)
+        finally:
+            terminal.close(entered=False)
     assert read_trusts(profile) == before, "Inspecting /hooks must not grant trust"
 
 

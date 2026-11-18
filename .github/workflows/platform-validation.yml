@@ -9,14 +9,14 @@ on:
         description: Validation scope
         type: choice
         default: full
-        options: [full, host-trust]
+        options: [full, host-trust, windows-trust]
 
 permissions:
   contents: read
 
 jobs:
   embedding-diagnostics:
-    if: inputs.focus != 'host-trust' && !contains(github.event.head_commit.message, '[host-trust]')
+    if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
     name: Embeddings ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025, macos-15]
+        os: ${{ fromJSON((inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '[windows-trust]')) && '["windows-2025"]' || '["ubuntu-24.04","windows-2025","macos-15"]') }}
     env:
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -84,16 +84,20 @@ jobs:
         if: runner.os == 'Windows'
         run: uv pip install --system pywinpty==3.0.2
       - name: Install browser
-        if: inputs.focus != 'host-trust' && !contains(github.event.head_commit.message, '[host-trust]')
+        if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
         working-directory: tests/browser
         run: |
           npm install --ignore-scripts --no-package-lock
           npx playwright install --with-deps chromium
       - name: Run regression and native runtime tests
+        if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
         timeout-minutes: 5
         run: python tests/run.py
+      - name: Run terminal driver regression tests
+        if: inputs.focus == 'host-trust' || inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '-trust]')
+        run: python -m unittest discover -s tests -p test_terminal_arguments.py -v
       - name: Run browser regression tests
-        if: always() && inputs.focus != 'host-trust' && !contains(github.event.head_commit.message, '[host-trust]')
+        if: always() && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
         timeout-minutes: 5
         working-directory: tests/browser
         run: |

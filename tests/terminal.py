@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import json
 from contextlib import suppress
 from pathlib import Path
 import queue
@@ -109,22 +110,37 @@ class Terminal:
         if not condition():
             raise AssertionError(f"{description} failed. Terminal log {self.log}\n{self.display[-4000:]}")
 
+    def _wait_for_exit(self, timeout: float) -> bool:
+        deadline = time.monotonic() + timeout
+        while True:
+            self.read()
+            if not self.alive():
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+
     def close(self, *, entered: bool = True) -> None:
         try:
             if self.alive():
                 self.send("/exit\r" if entered else "\x1b")
-                deadline = time.monotonic() + 2
-                while self.alive() and time.monotonic() < deadline:
-                    self.read()
-                    time.sleep(0.05)
+                self._wait_for_exit(2)
             if self.alive():
                 if self.windows:
-                    subprocess.run(
+                    result = subprocess.run(
                         ["taskkill", "/PID", str(self.process.pid), "/T", "/F"],
-                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=10,
+                        capture_output=True, encoding="utf-8", errors="replace", timeout=10,
                     )
-                    if self.alive():
-                        raise AssertionError(f"Native terminal process {self.process.pid} did not exit")
+                    exited = self._wait_for_exit(10)
+                    diagnostic = self.log.with_suffix(".cleanup.json")
+                    diagnostic.parent.mkdir(parents=True, exist_ok=True)
+                    diagnostic.write_text(json.dumps({
+                        "pid": self.process.pid, "returncode": result.returncode,
+                        "stdout": result.stdout, "stderr": result.stderr,
+                        "observed_exit": exited, "exit_wait_seconds": 10,
+                    }, indent=2), encoding="utf-8")
+                    if not exited:
+                        raise AssertionError(f"Native terminal process {self.process.pid} survived taskkill; see {diagnostic}")
                 else:
                     os.killpg(self.process.pid, signal.SIGKILL)
         finally:
