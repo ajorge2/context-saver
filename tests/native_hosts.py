@@ -23,16 +23,28 @@ from thread_tree_scope import save_scope_config
 CLAUDE_FIXTURE_ANSWER = "The synthetic integration answer is AZURE-947."
 
 
+def npm_entrypoint(host: str, shim: Path) -> list[str]:
+    package_name = "@openai/codex" if host == "codex" else "@anthropic-ai/claude-code"
+    package = shim.parent / "node_modules" / package_name
+    manifest = json.loads((package / "package.json").read_text(encoding="utf-8"))
+    declared_bin = manifest["bin"]
+    entry = package / (declared_bin[host] if isinstance(declared_bin, dict) else declared_bin)
+    if not entry.is_file():
+        raise RuntimeError(f"Missing declared npm host entrypoint {entry}")
+    if entry.suffix.lower() in (".js", ".mjs", ".cjs"):
+        node = shutil.which("node")
+        if node is None:
+            raise RuntimeError("Missing Node.js for the declared coding host entrypoint")
+        return [node, str(entry)]
+    return [str(entry)]
+
+
 def host_command(host: str) -> list[str]:
     executable = shutil.which(host)
     if executable is None:
         raise RuntimeError(f"Missing native test host {host}")
     if os.name == "nt" and Path(executable).suffix.lower() in (".cmd", ".ps1"):
-        package = "@openai/codex/bin/codex.js" if host == "codex" else "@anthropic-ai/claude-code/cli.js"
-        script = Path(executable).parent / "node_modules" / package
-        if not script.is_file():
-            raise RuntimeError(f"Missing npm host entrypoint {script}")
-        return [str(shutil.which("node")), str(script)]
+        return npm_entrypoint(host, Path(executable))
     return [executable]
 
 

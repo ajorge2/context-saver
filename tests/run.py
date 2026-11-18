@@ -11,6 +11,19 @@ import unittest
 
 import _support
 
+
+class DiagnosticResult(unittest.TextTestResult):
+    def addError(self, test, error):
+        super().addError(test, error)
+        self.stream.writeln(self.errors[-1][1])
+        self.stream.flush()
+
+    def addFailure(self, test, error):
+        super().addFailure(test, error)
+        self.stream.writeln(self.failures[-1][1])
+        self.stream.flush()
+
+
 if __name__ == "__main__":
     faulthandler.dump_traceback_later(60, repeat=True)
     with tempfile.TemporaryDirectory(prefix="context-saver-test-profile-") as directory:
@@ -25,7 +38,7 @@ if __name__ == "__main__":
             UV_PYTHON="3.12",
         )
         suite = unittest.defaultTestLoader.discover(str(Path(__file__).parent), pattern="test_*.py")
-        result = unittest.TextTestRunner(verbosity=2).run(suite)
+        result = unittest.TextTestRunner(verbosity=2, resultclass=DiagnosticResult).run(suite)
         report_path = os.environ.get("CONTEXT_SAVER_TEST_REPORTS")
         if report_path:
             reports = Path(report_path)
