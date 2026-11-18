@@ -1,6 +1,7 @@
 """Run the portable regression suite with isolated synthetic data."""
 
 from pathlib import Path
+import faulthandler
 import json
 import os
 import platform
@@ -11,6 +12,7 @@ import unittest
 import _support
 
 if __name__ == "__main__":
+    faulthandler.dump_traceback_later(60, repeat=True)
     with tempfile.TemporaryDirectory(prefix="context-saver-test-profile-") as directory:
         root = Path(directory)
         for name in ("profile", "codex", "claude", "context-data"):
