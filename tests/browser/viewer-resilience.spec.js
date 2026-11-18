@@ -291,7 +291,7 @@ test("EX-RACE-05: clearing the project while browse is pending cannot restore it
   await expect(search(page)).toHaveAccessibleName("Search Context");
   await releaseResponse(page, old, { json: branch("alpha", "Sensitive Alpha") });
   await expect(subjectCards(page)).toHaveCount(0);
-  await expect(page.locator('[data-section="1"] .feature-empty')).toContainText("Search your context");
+  await expect(page.locator('[data-section="1"] .feature-empty')).toContainText("Choose a project to get started");
 });
 
 test("EX-RACE-06: an obsolete search cannot unlock the current project's pending search", async ({ page }) => {

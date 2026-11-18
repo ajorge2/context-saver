@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -165,31 +164,33 @@ def review_hooks(project: Path, environment: dict[str, str], profile: Path,
                  expected_count: int, log: Path) -> None:
     """Approve each selected command individually in Codex's actual /hooks UI."""
     command = host_command("codex") + ["--no-daemon", "--no-alt-screen", "-C", str(project)]
-    terminal = Terminal(command, project, environment, log)
-    try:
-        terminal.wait(lambda: "Hooks need review" in terminal.display, "Showing native Codex startup hook review")
-        terminal.send("1")
-        terminal.wait(lambda: "hooks need review before" in terminal.display or "hook needs review before" in terminal.display,
-                      "Opening the /hooks event browser")
-        for index in range(expected_count):
+    for index in range(expected_count):
+        terminal = Terminal(command, project, environment, log.with_stem(f"{log.stem}-{index + 1}"))
+        try:
+            terminal.wait(lambda: "Hooks need review" in terminal.display or "context-saver-fixture" in terminal.display,
+                          "Displaying native Codex hook review or the initialized session")
+            if "Hooks need review" in terminal.display:
+                terminal.send("3")
+            terminal.wait(lambda: "context-saver-fixture" in terminal.display,
+                          "Finishing Codex session initialization")
+            time.sleep(0.3)
+            terminal.send("/hooks")
+            time.sleep(0.15)
+            terminal.send("\r")
+            terminal.wait(lambda: "hooks need review before" in terminal.display or "hook needs review before" in terminal.display,
+                          "Opening the /hooks event browser")
             before = read_trusts(profile)
+            time.sleep(0.15)
             terminal.send("\r")
             terminal.wait(lambda: "review required" in terminal.display and "Trust" in terminal.display,
                           "Reviewing the selected hook command")
             terminal.send("t")
             terminal.wait(lambda: read_trusts(profile) != before, "Persisting one native hook approval")
-            if index + 1 < expected_count:
-                terminal.send("\x1b")
-                time.sleep(0.15)
-                terminal.send("\x1b")
-                time.sleep(0.15)
-                terminal.send("/hooks\r")
-                time.sleep(0.3)
-        terminal.send("\x1b")
-        time.sleep(0.15)
-        terminal.send("\x1b")
-    finally:
-        terminal.close()
+            terminal.send("\x1b")
+            time.sleep(0.15)
+            terminal.send("\x1b")
+        finally:
+            terminal.close()
 
 
 async def verify_retained_source(installed: Path, project: Path, environment: dict[str, str]) -> dict:
