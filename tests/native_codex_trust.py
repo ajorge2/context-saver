@@ -79,8 +79,8 @@ def read_trusts(profile: Path) -> dict:
     return tomllib.loads((profile / "config.toml").read_text(encoding="utf-8")).get("hooks", {}).get("state", {})
 
 
-def list_hooks(project: Path, environment: dict[str, str], log: Path) -> list[dict]:
-    """Read native status through the same API used by the /hooks browser."""
+def native_request(project: Path, environment: dict[str, str], method: str, params: dict, log: Path) -> dict:
+    """Call the installed Codex API with this fixture's disposable profile."""
     with log.open("w", encoding="utf-8") as errors:
         process = subprocess.Popen(host_command("codex") + ["--no-daemon", "app-server", "--stdio"],
                                    cwd=project, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -121,11 +121,7 @@ def list_hooks(project: Path, environment: dict[str, str], log: Path) -> list[di
             assert process.stdin is not None
             process.stdin.write(json.dumps({"method": "initialized"}) + "\n")
             process.stdin.flush()
-            result = request(2, "hooks/list", {"cwds": [str(project)]})
-            assert len(result["data"]) == 1, result
-            entry = result["data"][0]
-            assert not entry["errors"], entry
-            return entry["hooks"]
+            return request(2, method, params)
         finally:
             process.terminate()
             try:
@@ -134,6 +130,30 @@ def list_hooks(project: Path, environment: dict[str, str], log: Path) -> list[di
                 process.kill()
                 process.wait(timeout=5)
             reader.join(timeout=3)
+
+
+def list_hooks(project: Path, environment: dict[str, str], log: Path) -> list[dict]:
+    """Read native status through the same API used by the /hooks browser."""
+    result = native_request(project, environment, "hooks/list", {"cwds": [str(project)]}, log)
+    assert len(result["data"]) == 1, result
+    entry = result["data"][0]
+    assert not entry["errors"], entry
+    return entry["hooks"]
+
+
+def approve_native_hook(project: Path, environment: dict[str, str], profile: Path, hook: dict, log: Path) -> None:
+    """Approve one exact command through the native API used by Codex's UI."""
+    assert hook["trustStatus"] in {"untrusted", "modified"}, hook
+    before = read_trusts(profile)
+    native_request(project, environment, "config/batchWrite", {
+        "edits": [{"keyPath": "hooks.state", "value": {hook["key"]: {"trusted_hash": hook["currentHash"]}},
+                   "mergeStrategy": "upsert"}],
+        "reloadUserConfig": True,
+    }, log)
+    after = read_trusts(profile)
+    assert after[hook["key"]]["trusted_hash"] == hook["currentHash"], after
+    assert {key: value for key, value in after.items() if key != hook["key"]} == {
+        key: value for key, value in before.items() if key != hook["key"]}, (before, after)
 
 
 def wait_until(condition, description: str, timeout: float = 45) -> None:
@@ -171,9 +191,13 @@ def review_hooks(project: Path, environment: dict[str, str], profile: Path,
                           "Displaying native Codex hook review or the initialized session")
             if "Hooks need review" in terminal.display:
                 # Let the protected startup screen finish draining terminal
-                # replies before selecting its non-trusting continuation.
+                # replies. Escape safely continues without granting trust.
                 time.sleep(0.3)
-                terminal.send("3\r")
+                for _ in range(4):
+                    if "context-saver-fixture" in terminal.display:
+                        break
+                    terminal.send("\x1b")
+                    time.sleep(0.3)
             terminal.wait(lambda: "context-saver-fixture" in terminal.display,
                           "Finishing Codex session initialization")
             time.sleep(0.3)
@@ -189,6 +213,9 @@ def review_hooks(project: Path, environment: dict[str, str], profile: Path,
                           "Reviewing the selected hook command")
             terminal.send("t")
             terminal.wait(lambda: read_trusts(profile) != before, "Persisting one native hook approval")
+            after = read_trusts(profile)
+            assert len(after) == len(before) + 1, (before, after)
+            assert all(after[key] == value for key, value in before.items()), (before, after)
             terminal.send("\x1b")
             time.sleep(0.15)
             terminal.send("\x1b")
@@ -247,7 +274,13 @@ def main() -> None:
                 assert not indexed_turns(store), indexed_turns(store)
                 assert not read_trusts(profile)
 
-                review_hooks(project, environment, profile, 3, reports / "codex-review-first.txt")
+                review_hooks(project, environment, profile, 1, reports / "codex-review-first.txt")
+                remaining = list_hooks(project, environment, reports / "codex-inventory-after-ui.log")
+                assert sum(row["trustStatus"] == "trusted" for row in remaining) == 1, remaining
+                for hook in remaining:
+                    if hook["trustStatus"] == "untrusted":
+                        approve_native_hook(project, environment, profile, hook,
+                                            reports / f"codex-approve-{hook['eventName']}.log")
                 trusted = list_hooks(project, environment, reports / "codex-inventory-trusted.log")
                 assert {row["trustStatus"] for row in trusted} == {"trusted"}, trusted
                 run_answer(project, environment, FIRST_PROMPT, reports / "codex-trusted-turn.jsonl")
@@ -286,7 +319,8 @@ def main() -> None:
                            reports / "codex-modified-stop-turn.jsonl")
                 assert indexed_turns(store) == [original], indexed_turns(store)
 
-                review_hooks(project, environment, profile, 1, reports / "codex-review-upgrade.txt")
+                modified, = [row for row in changed if row["trustStatus"] == "modified"]
+                approve_native_hook(project, environment, profile, modified, reports / "codex-approve-upgrade.log")
                 run_answer(project, environment, "Retain the synthetic follow-up decision UMBER-852.",
                            reports / "codex-upgraded-turn.jsonl")
                 wait_until(lambda: len(indexed_turns(store)) == 2 and all(row[1] == "indexed" for row in indexed_turns(store)),
@@ -300,6 +334,7 @@ def main() -> None:
                 serving.join(timeout=5)
         (reports / "codex-trust.json").write_text(json.dumps({
             "platform": sys.platform, "untrusted_hooks_skipped": True, "individual_hook_approval": True,
+            "first_approval_through_terminal": True, "remaining_approvals_through_native_api": True,
             "trusted_turn_indexed_once": True, "only_changed_hook_requires_review": True,
             "changed_hook_skipped_until_review": True, "upgraded_turn_indexed_once": True,
             "original_source_verified_after_upgrade": True,

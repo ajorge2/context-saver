@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+from contextlib import closing
 import os
 from pathlib import Path
 import sqlite3
@@ -160,7 +161,7 @@ class WindowsStorageTests(unittest.TestCase):
         )
         self.assertEqual(hits[0][0], 2)
         self.assertTrue(info["available"])
-        with sqlite3.connect(self.root / "fixture.sqlite3") as database:
+        with closing(sqlite3.connect(self.root / "fixture.sqlite3")) as database:
             database.execute("CREATE TABLE index_shards(name TEXT, project_id TEXT)")
             vectors.invalidate_project_index(database, data_directory=self.root, project_id="project-fixture")
         self.assertFalse(vectors._index_path(self.root, "project-fixture").exists())

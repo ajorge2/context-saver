@@ -13,6 +13,7 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -195,7 +196,7 @@ def verify_claude_turn(project: Path, root: Path, env: dict[str, str]) -> None:
     assert hooks == [("UserPromptSubmit", "success"), ("Stop", "success")], hooks
     assert any(event.get("result") == CLAUDE_FIXTURE_ANSWER for event in events), events
     assert not (store / "hook-errors.jsonl").exists()
-    with sqlite3.connect(store / "index.sqlite3") as db:
+    with closing(sqlite3.connect(store / "index.sqlite3")) as db:
         deadline = time.monotonic() + 30
         while True:
             turns = db.execute("SELECT state, transcript_path FROM turn_ingestion").fetchall()

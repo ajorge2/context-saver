@@ -150,6 +150,10 @@ class ThreadTreeEmbeddingIntegrationTests(unittest.TestCase):
             not pipeline.search_project(project_id, query, limit=5)
             for query in NEGATIVE_QUERIES
         )
+        if exact_recall < 0.99 or paraphrase_recall < 0.90:
+            from embedding_diagnostics import capture
+            report_directory = Path(os.environ.get("CONTEXT_SAVER_TEST_REPORTS", str(self.root / "diagnostics")))
+            capture(report_directory, provider=provider, source_vectors=vectors)
         self.assertGreaterEqual(exact_recall, 0.99, exact_misses)
         self.assertGreaterEqual(paraphrase_recall, 0.90, paraphrase_misses)
         self.assertGreaterEqual(

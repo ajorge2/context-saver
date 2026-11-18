@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import closing
 from unittest.mock import patch
 
 from _support import PACKAGE_ROOT, SCRIPTS_ROOT, process_line
@@ -151,14 +152,14 @@ subprocess.Popen([sys.executable, '-X', 'utf8', '-c',
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual(json.loads(result.stdout), {"continue": True, "suppressOutput": True})
         self.assertFalse((store / "hook-errors.jsonl").exists())
-        with sqlite3.connect(store / "index.sqlite3") as db:
+        with closing(sqlite3.connect(store / "index.sqlite3")) as db:
             self.assertEqual(db.execute("SELECT COUNT(*) FROM session_observations").fetchone()[0], 2)
             self.assertEqual(db.execute("SELECT COUNT(*) FROM staged_user_prompts").fetchone()[0], 0)
         save_scope_config(store, {"configured": True, "projects": [{"path": str(self.project), "includeNewChats": True}]})
         for _ in range(2):
             result = invoke(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], event)
             self.assertEqual(result.returncode, 0, result.stderr)
-        with sqlite3.connect(store / "index.sqlite3") as db:
+        with closing(sqlite3.connect(store / "index.sqlite3")) as db:
             self.assertEqual(db.execute("SELECT prompt FROM staged_user_prompts").fetchall(), [("Synthetic prompt café Ω",)])
 
     def test_required_local_semantic_runtime_is_available(self) -> None:
