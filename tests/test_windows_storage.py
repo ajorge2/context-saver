@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
+from _support import process_line
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "plugins" / "thread-tree" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -54,7 +55,7 @@ class WindowsStorageTests(unittest.TestCase):
             "print('owned', flush=True); sys.stdin.readline(); lock.__exit__(None,None,None)",
             str(self.root / "ownership.lock"),
         )
-        self.assertEqual(child.stdout.readline().strip(), "owned")
+        self.assertEqual(process_line(child), "owned")
         return child
 
     def test_live_owner_excludes_competitor_and_death_releases_lock(self) -> None:
@@ -151,7 +152,7 @@ class WindowsStorageTests(unittest.TestCase):
             "print('cached',flush=True); sys.stdin.readline()",
             str(self.root),
         )
-        self.assertEqual(reader.stdout.readline().strip(), "cached")
+        self.assertEqual(process_line(reader), "cached")
         publish(2)
         hits, info = vectors.search(
             data_directory=self.root, project_id="project-fixture",

@@ -14,7 +14,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from _support import PACKAGE_ROOT, SCRIPTS_ROOT
+from _support import PACKAGE_ROOT, SCRIPTS_ROOT, process_line
 from native_hosts import isolated_environment
 import thread_tree
 from thread_tree_scope import save_scope_config
@@ -63,26 +63,26 @@ class NativePlatformTests(unittest.TestCase):
     def test_native_lock_excludes_competitor_and_releases_after_process_death(self) -> None:
         lock = self.root / "State é & spaces" / "owner.lock"
         owner = self.lock_child(lock)
-        self.assertEqual(owner.stdout.readline().strip(), "acquired")
+        self.assertEqual(process_line(owner), "acquired")
         competitor = self.lock_child(lock, blocking=False)
         stdout, stderr = competitor.communicate(timeout=10)
         self.assertEqual((competitor.returncode, stdout.strip(), stderr), (2, "blocked", ""))
         owner.kill()
         owner.communicate(timeout=10)
         replacement = self.lock_child(lock, blocking=False)
-        self.assertEqual(replacement.stdout.readline().strip(), "acquired")
+        self.assertEqual(process_line(replacement), "acquired")
         replacement.communicate("release\n", timeout=10)
         self.assertEqual(replacement.returncode, 0)
 
     def test_blocking_lock_waits_for_existing_owner(self) -> None:
         lock = self.root / "contended.lock"
         owner = self.lock_child(lock)
-        self.assertEqual(owner.stdout.readline().strip(), "acquired")
+        self.assertEqual(process_line(owner), "acquired")
         competitor = self.lock_child(lock)
         time.sleep(0.25)
         self.assertIsNone(competitor.poll())
         owner.communicate("release\n", timeout=10)
-        self.assertEqual(competitor.stdout.readline().strip(), "acquired")
+        self.assertEqual(process_line(competitor), "acquired")
         competitor.communicate("release\n", timeout=10)
         self.assertEqual(competitor.returncode, 0)
 
