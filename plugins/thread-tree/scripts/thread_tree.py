@@ -412,6 +412,43 @@ def load_config() -> dict[str, Any]:
         try:
             loaded = json.loads(config_file.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
+                old_version = "granite-small-english-r2-int8-pc-v1"
+                old_sha = "38842c5f27286dbe97d0674f1618def6cc7adf20d70e66923cbd7e34767155b4"
+                known_builtin = (
+                    str(loaded.get("embedding_provider") or "fastembed").casefold() in {"fastembed", "auto"}
+                    and (loaded.get("fastembed_model") or FASTEMBED_MODEL_NAME) == FASTEMBED_MODEL_NAME
+                    and (loaded.get("fastembed_model_version") or old_version) == old_version
+                    and (loaded.get("fastembed_model_sha256") or old_sha) == old_sha
+                    and (loaded.get("fastembed_model_version") == old_version
+                         or loaded.get("fastembed_model_sha256") == old_sha
+                         or bool(loaded.get("fastembed_model_path")))
+                )
+                bundled_path = not loaded.get("fastembed_model_path")
+                if known_builtin and loaded.get("fastembed_model_path"):
+                    previous = Path(str(loaded["fastembed_model_path"])).expanduser().resolve()
+                    bundled_path = previous == DEFAULT_FASTEMBED_MODEL_PATH.resolve()
+                    if previous.parts[-3:] == ("assets", "models", DEFAULT_FASTEMBED_MODEL_PATH.name):
+                        try:
+                            manifest = json.loads((previous / "MODEL.json").read_text(encoding="utf-8"))
+                            bundled_path = bundled_path or (
+                                isinstance(manifest, dict) and manifest.get("name") == old_version
+                                and manifest.get("model_sha256") == old_sha
+                            )
+                        except (OSError, json.JSONDecodeError):
+                            # Hosts can prune an old versioned cache after an
+                            # upgrade. Its native package layout identifies it.
+                            bundled_path = bundled_path or (
+                                len(previous.parents) > 6
+                                and previous.parents[3].name == "thread-tree"
+                                and previous.parents[5].name == "cache"
+                                and previous.parents[6].name == "plugins"
+                            )
+                if known_builtin and bundled_path:
+                    loaded.update(
+                        fastembed_model_version=FASTEMBED_MODEL_VERSION,
+                        fastembed_model_sha256=FASTEMBED_MODEL_SHA256,
+                        fastembed_model_path=str(DEFAULT_FASTEMBED_MODEL_PATH),
+                    )
                 defaults.update(loaded)
         except (OSError, json.JSONDecodeError):
             pass

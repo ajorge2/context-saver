@@ -1130,6 +1130,97 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
         raise
 
 
+def _model_upgrade_needed(db: sqlite3.Connection, project_id: str, model: str) -> bool:
+    return db.execute(
+        """SELECT 1 FROM turn_chunks WHERE project_id=? AND evicted=0
+           AND embedding IS NOT NULL AND (embedding_model IS NULL OR embedding_model!=?) LIMIT 1""",
+        (project_id, model),
+    ).fetchone() is not None
+
+
+def _migrate_project_embeddings(
+    db: sqlite3.Connection, project_id: str, provider: Any, batch_size: int,
+) -> int:
+    """Stage a new vector space before replacing the complete live snapshot."""
+    model = provider.embedding_model
+    dimension = int(provider.embedding_dimension)
+    # TEMP storage is private to this connection and can spill to disk. A
+    # stopped worker loses staging work while leaving every old vector intact.
+    db.execute("DROP TABLE IF EXISTS temp.embedding_upgrade_staging")
+    db.execute("""CREATE TEMP TABLE embedding_upgrade_staging (
+        id TEXT PRIMARY KEY, content_hash TEXT NOT NULL, embedding TEXT NOT NULL
+    )""")
+    try:
+        with _project_maintenance_lock(db, project_id):
+            while True:
+                rows = db.execute(
+                    """SELECT c.id, c.text, c.content_hash FROM turn_chunks c
+                       WHERE c.project_id=? AND c.evicted=0
+                         AND (c.embedding IS NULL OR c.embedding_model IS NULL OR c.embedding_model!=?)
+                         AND NOT EXISTS (SELECT 1 FROM temp.embedding_upgrade_staging s
+                                         WHERE s.id=c.id AND s.content_hash=c.content_hash)
+                       ORDER BY c.seq LIMIT ?""",
+                    (project_id, model, batch_size),
+                ).fetchall()
+                if rows:
+                    vectors = provider.embed([str(row["text"]) for row in rows], task="passage")
+                    if len(vectors) != len(rows) or provider.embedding_model != model:
+                        raise RuntimeError("The embedding model upgrade returned an incomplete batch")
+                    if any(len(vector) != dimension or not all(math.isfinite(value) for value in vector)
+                           or not any(vector) for vector in vectors):
+                        raise RuntimeError("The embedding model upgrade returned an invalid vector")
+                    with db:
+                        db.executemany(
+                            """INSERT OR REPLACE INTO temp.embedding_upgrade_staging
+                               (id, content_hash, embedding) VALUES (?, ?, ?)""",
+                            [(row["id"], row["content_hash"], json.dumps(_normalize(vector)))
+                             for row, vector in zip(rows, vectors)],
+                        )
+                    continue
+
+                with db:
+                    db.execute("BEGIN IMMEDIATE")
+                    if not db.execute("SELECT 1 FROM projects WHERE id=?", (project_id,)).fetchone():
+                        return 0
+                    # A concurrent turn or source correction may have committed
+                    # between the last batch and acquiring the write lock.
+                    unstaged = db.execute(
+                        """SELECT 1 FROM turn_chunks c WHERE c.project_id=? AND c.evicted=0
+                           AND (c.embedding IS NULL OR c.embedding_model IS NULL OR c.embedding_model!=?)
+                           AND NOT EXISTS (SELECT 1 FROM temp.embedding_upgrade_staging s
+                                           WHERE s.id=c.id AND s.content_hash=c.content_hash) LIMIT 1""",
+                        (project_id, model),
+                    ).fetchone()
+                    if unstaged:
+                        continue
+                    published = db.execute(
+                        """UPDATE turn_chunks SET embedding=(
+                               SELECT s.embedding FROM temp.embedding_upgrade_staging s
+                               WHERE s.id=turn_chunks.id AND s.content_hash=turn_chunks.content_hash
+                           ), embedding_model=?
+                           WHERE project_id=? AND evicted=0
+                             AND (embedding IS NULL OR embedding_model IS NULL OR embedding_model!=?)
+                             AND EXISTS (SELECT 1 FROM temp.embedding_upgrade_staging s
+                                         WHERE s.id=turn_chunks.id AND s.content_hash=turn_chunks.content_hash)""",
+                        (model, project_id, model),
+                    ).rowcount
+                    if published:
+                        # Keep the completed tree readable. Its previous model's
+                        # centroids cannot guide assignment in the new space.
+                        db.execute("UPDATE semantic_nodes SET embedding=NULL WHERE project_id=?", (project_id,))
+                        db.execute(
+                            """UPDATE fit_runs SET state='cancelled', error=?, completed_at=?
+                               WHERE project_id=? AND state IN ('queued','running')""",
+                            (f"Superseded by embedding model upgrade to {model}", state.utc_now(), project_id),
+                        )
+                        state.schedule_global_rebuild(
+                            db, project_id, reason=f"embedding model upgrade to {model}", manage_transaction=False,
+                        )
+                    return published
+    finally:
+        db.execute("DROP TABLE IF EXISTS temp.embedding_upgrade_staging")
+
+
 def _backfill_project_embeddings(
     db: sqlite3.Connection,
     project_id: str,
@@ -1141,6 +1232,8 @@ def _backfill_project_embeddings(
 
     if not provider.can_embed:
         return 0
+    if _model_upgrade_needed(db, project_id, provider.embedding_model):
+        return _migrate_project_embeddings(db, project_id, provider, batch_size)
     total = 0
     while True:
         rows = db.execute(
@@ -1193,6 +1286,15 @@ def _process_project(
     provider = tree.SemanticProvider(config)
     processed = 0
     failures: list[str] = []
+    embedded_chunks = 0
+    migration_failed = False
+    if provider.can_embed and _model_upgrade_needed(db, project_id, provider.embedding_model):
+        try:
+            # Upgrade before assigning new chunks to existing topic centroids.
+            embedded_chunks = _backfill_project_embeddings(db, project_id, provider)
+        except Exception as error:
+            migration_failed = True
+            failures.append(f"embedding model upgrade: {error}")
     if max_turns is None or max_turns > 0:
         state.requeue_retryable_turns(db, project_id, thread_id)
     while max_turns is None or processed < max_turns:
@@ -1211,7 +1313,7 @@ def _process_project(
                     chunk.pop("ordinal", 0),
                     CHUNKER_VERSION,
                 )
-            if provider.can_embed and chunks:
+            if provider.can_embed and not migration_failed and chunks:
                 vectors = provider.embed([chunk["text"] for chunk in chunks], task="passage")
                 if vectors:
                     provider.embedding_dimension = len(vectors[0])
@@ -1234,11 +1336,10 @@ def _process_project(
                 continue
             failures.append(f"{turn['id']}: {error}")
 
-    embedded_chunks = 0
     index_result: dict[str, Any] | None = None
-    if provider.can_embed:
+    if provider.can_embed and not migration_failed:
         try:
-            embedded_chunks = _backfill_project_embeddings(db, project_id, provider)
+            embedded_chunks += _backfill_project_embeddings(db, project_id, provider)
             if vector_index.available():
                 index_result = vector_index.update_project_index(
                     db,
