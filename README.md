@@ -1,19 +1,22 @@
 # Context Saver
 
-Context Saver is a **Codex and Claude Code plugin for macOS** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
+Context Saver is a **Codex and Claude Code plugin** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
 
-[Install the plugin](#install-on-macos) · [Open the viewer](#open-the-viewer)
+[Install the plugin](#install) · [Open the viewer](#open-the-viewer)
 
-## Install on macOS
+<a id="install-on-macos"></a>
 
-You’ll need Python 3.12 and `uv` available to your coding client. [Install Python](https://www.python.org/downloads/macos/) · [Install uv](https://docs.astral.sh/uv/getting-started/installation/)
+## Install
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and make sure your coding client can find it on its PATH. Context Saver uses uv to select Python 3.12 and install its pinned runtime dependencies on first use.
 
 Copy the command for your client into Terminal.
 
 ### Codex
 
 ```sh
-codex plugin marketplace add ajorge2/context-saver && codex plugin add thread-tree@context-saver
+codex plugin marketplace add ajorge2/context-saver
+codex plugin add thread-tree@context-saver
 ```
 
 Review the Context Saver hooks in **Settings → Hooks** in the desktop app or with `/hooks` in the terminal UI. Start a new chat and attach **Context Saver** to begin saving that chat.
@@ -41,9 +44,7 @@ The viewer opens in your browser. Select a project to browse its subjects, broad
 ```sh
 git clone https://github.com/ajorge2/context-saver.git
 cd context-saver
-uv run --no-project --python 3.12 \
-  --with fastembed==0.9.1 --with usearch==2.26.6 \
-  python plugins/thread-tree/scripts/thread_tree.py serve --port 0 --open
+uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 python plugins/thread-tree/scripts/thread_tree.py serve --port 0 --open
 ```
 
 Keep this Terminal window open while you use the viewer.

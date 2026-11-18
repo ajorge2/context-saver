@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-24.04, windows-2025, macos-15]
     env:
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
@@ -50,23 +50,27 @@ jobs:
           npm install --ignore-scripts --no-package-lock
           npx playwright install --with-deps chromium
       - name: Run regression and native runtime tests
+        timeout-minutes: 5
         run: python tests/run.py
       - name: Run browser regression tests
         if: always()
+        timeout-minutes: 5
         working-directory: tests/browser
         run: |
           npm test
           npm run test:e2e
       - name: Run installed host acceptance
         if: always()
+        timeout-minutes: 5
         run: python tests/native_hosts.py
       - name: Review native trust and upgrade
         if: always()
+        timeout-minutes: 8
         run: python tests/native_trust.py
       - name: Save synthetic diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: context-saver-${{ matrix.os }}
-          path: ${{ runner.temp }}/context-saver-reports
+          path: ${{ github.workspace }}/test-reports
           if-no-files-found: warn

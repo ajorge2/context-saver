@@ -31,15 +31,13 @@ viewer, complete the activation above and open the local viewer.
    the package root and verify `scripts/thread_tree.py` exists there. When the
    host provides `CLAUDE_PLUGIN_ROOT`, use it if it contains that bundled
    script. The current project's directory can differ from the package root.
-3. Set `PACKAGE_ROOT` to that verified absolute path and `PORT` to `8765`.
-   If that port is occupied by a different service, set `PORT` to `0` so the
-   operating system can assign a free port. Run this command in a persistent
-   terminal session and leave the server running.
+3. Run the following command with its working directory set to the verified
+   package root. If port `8765` is occupied by a different service, replace
+   `--port 8765` with `--port 0` so the operating system assigns a free port.
+   Use a persistent terminal session and leave the server running.
 
    ```sh
-   uv run --no-project --python 3.12 \
-     --with fastembed==0.9.1 --with usearch==2.26.6 \
-     python "$PACKAGE_ROOT/scripts/thread_tree.py" serve --host 127.0.0.1 --port "$PORT" --open
+   uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 python -X utf8 scripts/thread_tree.py serve --host 127.0.0.1 --port 8765 --open
    ```
 
 4. The command prints the actual URL, including the port when one was
