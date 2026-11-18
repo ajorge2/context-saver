@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import closing
 import json
 import os
 from pathlib import Path
@@ -169,7 +170,7 @@ def indexed_turns(store: Path) -> list[tuple]:
     database = store / "index.sqlite3"
     if not database.exists():
         return []
-    with sqlite3.connect(database) as db:
+    with closing(sqlite3.connect(database)) as db:
         return db.execute("SELECT id, state, transcript_path FROM turn_ingestion ORDER BY created_at, id").fetchall()
 
 

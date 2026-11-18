@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "name": "granite-small-english-r2-int8-pc-v1",
+  "name": "granite-small-english-r2-u8u8-pc-v2",
   "base_model": "ibm-granite/granite-embedding-small-english-r2",
   "base_license": "Apache-2.0",
   "onnx_source": "onnx-community/granite-embedding-small-english-r2-ONNX",
@@ -9,19 +9,16 @@
   "dimension": 384,
   "quantization": {
     "tool": "onnxruntime.quantization.quantize_dynamic",
-    "weight_type": "QInt8",
-    "per_channel": true
+    "weight_type": "QUInt8",
+    "per_channel": true,
+    "signed_to_unsigned_conversion": "Lossless +128 offset to quantized weights and zero points",
+    "source_model_sha256": "38842c5f27286dbe97d0674f1618def6cc7adf20d70e66923cbd7e34767155b4"
   },
   "model_file": "onnx/model.onnx",
-  "model_sha256": "38842c5f27286dbe97d0674f1618def6cc7adf20d70e66923cbd7e34767155b4",
+  "model_sha256": "0a65b9f383a5da3833a7ecb16778bf27e04373f45a3af1c5919a4b87f51a4422",
   "validation": {
-    "date": "2026-11-16",
-    "platform": "arm64 macOS 26.5.1",
-    "python": "3.12.13",
-    "fastembed": "0.9.1",
-    "onnxruntime": "1.32.0",
-    "peak_rss_mib": 455.78,
-    "cold_start_seconds": 0.1805,
-    "warm_query_p95_ms": 4.898
+    "date": "2026-11-18",
+    "macos_centered_weights_preserved": true,
+    "macos_embeddings_bitwise_identical": true
   }
 }

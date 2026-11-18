@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import closing
 import os
 from pathlib import Path
 import re
@@ -89,7 +90,7 @@ def verify_claude_trust(reports: Path) -> None:
                         database = store / "index.sqlite3"
                         if not database.exists():
                             return False
-                        with sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True) as db:
+                        with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as db:
                             turns = db.execute("SELECT state, transcript_path FROM turn_ingestion").fetchall()
                             if not turns or turns[0][0] != "indexed":
                                 return False
