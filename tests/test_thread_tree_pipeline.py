@@ -39,7 +39,10 @@ class ThreadTreePipelineTests(unittest.TestCase):
         os.environ["THREAD_HISTORY_TREE_DATA"] = str(self.root / "data")
         (self.root / "data").mkdir()
         (self.root / "data" / "config.json").write_text(
-            json.dumps({"fit_thresholds": {"span": 2, "specific": 2, "broad": 2}}),
+            json.dumps({
+                "ollama_url": "fixture-no-network:",
+                "fit_thresholds": {"span": 2, "specific": 2, "broad": 2},
+            }),
             encoding="utf-8",
         )
         thread_tree.save_scope_config({
@@ -479,6 +482,7 @@ class ThreadTreePipelineTests(unittest.TestCase):
     def test_capacity_eviction_rebuilds_and_physically_removes_tree_copy(self) -> None:
         (self.root / "data" / "config.json").write_text(
             json.dumps({
+                "ollama_url": "fixture-no-network:",
                 "fit_thresholds": {"span": 2, "specific": 2, "broad": 2},
                 "retention_high_chunks": 2,
                 "retention_low_chunks": 1,

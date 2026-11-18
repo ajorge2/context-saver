@@ -170,7 +170,10 @@ def review_hooks(project: Path, environment: dict[str, str], profile: Path,
             terminal.wait(lambda: "Hooks need review" in terminal.display or "context-saver-fixture" in terminal.display,
                           "Displaying native Codex hook review or the initialized session")
             if "Hooks need review" in terminal.display:
-                terminal.send("3")
+                # Let the protected startup screen finish draining terminal
+                # replies before selecting its non-trusting continuation.
+                time.sleep(0.3)
+                terminal.send("3\r")
             terminal.wait(lambda: "context-saver-fixture" in terminal.display,
                           "Finishing Codex session initialization")
             time.sleep(0.3)

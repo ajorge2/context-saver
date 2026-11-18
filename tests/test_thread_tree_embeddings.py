@@ -25,6 +25,9 @@ class ThreadTreeEmbeddingIntegrationTests(unittest.TestCase):
         self.data = self.root / "data"
         self.data.mkdir()
         os.environ["THREAD_HISTORY_TREE_DATA"] = str(self.data)
+        (self.data / "config.json").write_text(
+            json.dumps({"ollama_url": "fixture-no-network:"}), encoding="utf-8",
+        )
 
     def tearDown(self) -> None:
         self.temp.cleanup()

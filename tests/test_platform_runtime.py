@@ -114,12 +114,27 @@ subprocess.Popen([sys.executable, '-X', 'utf8', '-c',
         self.assertNotEqual(canonical, project_id_for(str(self.root / "other project")))
 
     def test_native_shell_runs_all_hooks_from_unicode_package_and_project_paths(self) -> None:
+        self.assert_hook_shell_contract()
+
+    @unittest.skipUnless(os.name == "nt", "exercises native Windows PowerShell")
+    def test_powershell_runs_all_hooks_from_unicode_package_and_project_paths(self) -> None:
+        self.assert_hook_shell_contract(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command"])
+
+    def assert_hook_shell_contract(self, shell_prefix: list[str] | None = None) -> None:
         installed = self.root / "Installer é Ω & spaces" / "thread-tree"
         installed.parent.mkdir()
         shutil.copytree(PACKAGE_ROOT, installed, ignore=shutil.ignore_patterns("__pycache__"))
         environment = {**self.env, "CLAUDE_PLUGIN_ROOT": str(installed), "PLUGIN_ROOT": str(installed)}
         store = Path(environment["THREAD_HISTORY_TREE_DATA"])
         hooks = json.loads((installed / "hooks" / "hooks.json").read_text(encoding="utf-8"))["hooks"]
+
+        def invoke(command: str, event: dict) -> subprocess.CompletedProcess:
+            return subprocess.run([*shell_prefix, command] if shell_prefix else command,
+                                  shell=shell_prefix is None,
+                                  input=json.dumps(event, ensure_ascii=False),
+                                  env=environment, cwd=self.project, encoding="utf-8",
+                                  capture_output=True, timeout=30)
+
         for host in ("codex", "claude"):
             transcript = self.project / f"{host} transcript.jsonl"
             if host == "codex":
@@ -132,10 +147,7 @@ subprocess.Popen([sys.executable, '-X', 'utf8', '-c',
                      "session_id": f"synthetic-{host}", "transcript_path": str(transcript), "trigger": "manual"}
             for hook in ("UserPromptSubmit", "Stop", "PreCompact"):
                 with self.subTest(host=host, hook=hook):
-                    result = subprocess.run(hooks[hook][0]["hooks"][0]["command"], shell=True,
-                                            input=json.dumps(event, ensure_ascii=False),
-                                            env=environment, cwd=self.project, encoding="utf-8",
-                                            capture_output=True, timeout=30)
+                    result = invoke(hooks[hook][0]["hooks"][0]["command"], event)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     self.assertEqual(json.loads(result.stdout), {"continue": True, "suppressOutput": True})
         self.assertFalse((store / "hook-errors.jsonl").exists())
@@ -144,10 +156,7 @@ subprocess.Popen([sys.executable, '-X', 'utf8', '-c',
             self.assertEqual(db.execute("SELECT COUNT(*) FROM staged_user_prompts").fetchone()[0], 0)
         save_scope_config(store, {"configured": True, "projects": [{"path": str(self.project), "includeNewChats": True}]})
         for _ in range(2):
-            result = subprocess.run(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], shell=True,
-                                    input=json.dumps(event, ensure_ascii=False),
-                                    env=environment, cwd=self.project, encoding="utf-8",
-                                    capture_output=True, timeout=30)
+            result = invoke(hooks["UserPromptSubmit"][0]["hooks"][0]["command"], event)
             self.assertEqual(result.returncode, 0, result.stderr)
         with sqlite3.connect(store / "index.sqlite3") as db:
             self.assertEqual(db.execute("SELECT prompt FROM staged_user_prompts").fetchall(), [("Synthetic prompt café Ω",)])
