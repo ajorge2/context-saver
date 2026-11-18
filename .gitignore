@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 node_modules/
+test-reports/
 *.sqlite
 *.sqlite-*
 *.sqlite3

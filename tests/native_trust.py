@@ -23,7 +23,7 @@ SYNTHETIC_KEY = "synthetic-context-saver-testing"
 
 def verify_claude_trust(reports: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="context-saver-trust-") as directory:
-        root = Path(directory)
+        root = Path(directory).resolve()
         project = root / "Synthetic workspace é & spaces"
         project.mkdir()
         environment = isolated_environment(root)

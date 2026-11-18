@@ -93,10 +93,12 @@ class ThreadTreeTests(unittest.TestCase):
                 "refresh_" + ("a" * 32),
                 ["project-one"],
             )
-        self.assertEqual(command[:6], [
+        self.assertEqual(command[:8], [
             "/opt/homebrew/bin/uv",
             "run",
             "--no-project",
+            "--python",
+            "3.12",
             "--with",
             "usearch==2.26.6",
             "python",

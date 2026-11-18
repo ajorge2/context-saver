@@ -24,7 +24,8 @@ jobs:
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       DO_NOT_TRACK: "1"
       DISABLE_AUTOUPDATER: "1"
-      CONTEXT_SAVER_TEST_REPORTS: ${{ runner.temp }}/context-saver-reports
+      CONTEXT_SAVER_REQUIRE_NATIVE_MODEL: "1"
+      CONTEXT_SAVER_TEST_REPORTS: ${{ github.workspace }}/test-reports
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

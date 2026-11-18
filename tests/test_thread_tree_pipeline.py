@@ -195,7 +195,7 @@ class ThreadTreePipelineTests(unittest.TestCase):
                            [(f"{chunk['thread_id']}-topic", chunk["id"]) for chunk in chunks])
         db.close()
 
-        early_message = f"message:{chunks[0]['id']}"
+        early_message = f"message:{next(chunk['id'] for chunk in chunks if chunk['thread_id'] == 'early')}"
         newest_message = f"message:{chunks[-1]['id']}"
 
         def message_ids(payload):
@@ -891,7 +891,8 @@ class ThreadTreePipelineTests(unittest.TestCase):
         self.assertEqual(codex_plugin["skills"], "./skills/")
         self.assertEqual(claude_plugin["name"], "thread-tree")
         self.assertEqual(mcp["mcpServers"]["thread-tree"]["cwd"], ".")
-        self.assertEqual(mcp["mcpServers"]["thread-tree"]["args"][-1], "${CLAUDE_PLUGIN_ROOT}")
+        self.assertEqual(mcp["mcpServers"]["thread-tree"]["command"], "uv")
+        self.assertIn("${CLAUDE_PLUGIN_ROOT}", mcp["mcpServers"]["thread-tree"]["args"])
         self.assertIn("UserPromptSubmit", hooks["hooks"])
         self.assertIn("Stop", hooks["hooks"])
         self.assertIn("PreCompact", hooks["hooks"])

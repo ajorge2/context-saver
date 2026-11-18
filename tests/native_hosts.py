@@ -37,6 +37,7 @@ def host_command(host: str) -> list[str]:
 
 
 def isolated_environment(root: Path) -> dict[str, str]:
+    root = root.resolve()
     paths = {name: root / name for name in ("profile", "codex", "claude", "security", "context-data", "cache")}
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True)
@@ -190,7 +191,7 @@ def verify_claude_turn(project: Path, root: Path, env: dict[str, str]) -> None:
                 break
             time.sleep(0.1)
         assert len(turns) == 1 and turns[0][0] == "indexed", turns
-        assert Path(turns[0][1]).is_relative_to(Path(env["CLAUDE_CONFIG_DIR"])), turns
+        assert Path(turns[0][1]).resolve().is_relative_to(Path(env["CLAUDE_CONFIG_DIR"]).resolve()), turns
         assert db.execute("SELECT state FROM staged_user_prompts").fetchall() == [("reconciled",)]
         assert db.execute("SELECT 1 FROM turn_chunks WHERE instr(text, ?) > 0", (CLAUDE_FIXTURE_ANSWER,)).fetchone()
 
