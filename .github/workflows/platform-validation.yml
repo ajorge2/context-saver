@@ -4,12 +4,19 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      focus:
+        description: Validation scope
+        type: choice
+        default: full
+        options: [full, host-trust]
 
 permissions:
   contents: read
 
 jobs:
   embedding-diagnostics:
+    if: inputs.focus != 'host-trust' && !contains(github.event.head_commit.message, '[host-trust]')
     name: Embeddings ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -77,6 +84,7 @@ jobs:
         if: runner.os == 'Windows'
         run: uv pip install --system pywinpty==3.0.2
       - name: Install browser
+        if: inputs.focus != 'host-trust' && !contains(github.event.head_commit.message, '[host-trust]')
         working-directory: tests/browser
         run: |
           npm install --ignore-scripts --no-package-lock
@@ -85,7 +93,7 @@ jobs:
         timeout-minutes: 5
         run: python tests/run.py
       - name: Run browser regression tests
-        if: always()
+        if: always() && inputs.focus != 'host-trust' && !contains(github.event.head_commit.message, '[host-trust]')
         timeout-minutes: 5
         working-directory: tests/browser
         run: |

@@ -26,8 +26,9 @@ class Terminal:
         if self.windows:
             from winpty import PtyProcess
 
+            # String input is split and quoted again by pywinpty, corrupting path arguments.
             self.process = PtyProcess.spawn(
-                subprocess.list2cmdline(command), cwd=str(project), env=environment,
+                command, cwd=str(project), env=environment,
                 dimensions=(45, 125),
             )
         else:

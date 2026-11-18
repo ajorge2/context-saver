@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import closing
+from contextlib import closing, suppress
 import json
 import os
 from pathlib import Path
@@ -15,6 +15,7 @@ import tempfile
 import threading
 import time
 import tomllib
+import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from native_hosts import host_command, install_marketplace, isolated_environment, run_host
@@ -249,6 +250,7 @@ async def verify_retained_source(installed: Path, project: Path, environment: di
 def main() -> None:
     reports = Path(os.environ.get("CONTEXT_SAVER_TEST_REPORTS", tempfile.mkdtemp(prefix="context-saver-codex-reports-")))
     reports.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("CONTEXT_SAVER_TEST_REPORTS", str(reports))
     with tempfile.TemporaryDirectory(prefix="context-saver-codex-trust-") as temporary:
         root = Path(temporary).resolve()
         project = root / "Synthetic Codex Project é & spaces"
@@ -349,4 +351,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        reports = Path(os.environ.get("CONTEXT_SAVER_TEST_REPORTS", tempfile.gettempdir()))
+        with suppress(OSError):
+            reports.mkdir(parents=True, exist_ok=True)
+            (reports / "codex-trust-failure.txt").write_text(traceback.format_exc(), encoding="utf-8")
+        raise
