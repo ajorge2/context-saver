@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from thread_tree_state import exclusive_process_lock, initialize_state_schema
+from thread_tree_runtime import PYTHON_VERSION, detached_process_options
 import thread_tree_scope as scope
 import thread_tree_vector_index as vector_index
 
@@ -1929,6 +1930,8 @@ def _connection_rebuild_command(worker: Path, job_id: str, project_ids: list[str
             uv,
             "run",
             "--no-project",
+            "--python",
+            PYTHON_VERSION,
             "--with",
             "usearch==2.26.6",
             "python",
@@ -1970,7 +1973,7 @@ def _launch_connection_rebuild(job_id: str) -> dict[str, Any]:
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    start_new_session=True,
+                    **detached_process_options(),
                 )
             except OSError:
                 return write_connection_refresh_job(
@@ -2271,7 +2274,7 @@ def launch_scope_backfill() -> None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        **detached_process_options(),
     )
 
 

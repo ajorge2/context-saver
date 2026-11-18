@@ -1,13 +1,26 @@
 {
   "mcpServers": {
     "thread-tree": {
-      "command": "/bin/sh",
+      "command": "uv",
       "cwd": ".",
       "args": [
+        "run",
+        "--no-project",
+        "--python",
+        "3.12",
+        "--with",
+        "mcp==1.26.0",
+        "--with",
+        "fastembed==0.9.1",
+        "--with",
+        "usearch==2.26.6",
+        "python",
+        "-X",
+        "utf8",
         "-c",
-        "case \"$1\" in /*) cd \"$1\" || exit 1;; esac; exec uv run --no-project --with mcp==1.26.0 --with fastembed==0.9.1 --with usearch==2.26.6 python server/thread_tree_mcp.py stdio",
-        "context-saver-mcp",
-        "${CLAUDE_PLUGIN_ROOT}"
+        "import os\nimport runpy\nimport sys\nfrom pathlib import Path\n\nroot_argument = Path(sys.argv.pop(1))\npackage_root = root_argument if root_argument.is_absolute() else Path(os.environ.get('CLAUDE_PLUGIN_ROOT', '.'))\npackage_root = package_root.resolve()\nserver_script = package_root / 'server' / 'thread_tree_mcp.py'\nos.chdir(package_root)\nsys.argv[0] = str(server_script)\nrunpy.run_path(str(server_script), run_name='__main__')",
+        "${CLAUDE_PLUGIN_ROOT}",
+        "stdio"
       ]
     }
   }

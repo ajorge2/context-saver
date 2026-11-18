@@ -16,7 +16,7 @@ from pathlib import Path
 import thread_tree
 import thread_tree_pipeline as pipeline
 import thread_tree_scope as scope
-from thread_tree_runtime import worker_command
+from thread_tree_runtime import detached_process_options, worker_command
 
 
 def launch_worker(project_id: str) -> None:
@@ -26,7 +26,7 @@ def launch_worker(project_id: str) -> None:
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
-        start_new_session=True,
+        **detached_process_options(),
     )
 
 

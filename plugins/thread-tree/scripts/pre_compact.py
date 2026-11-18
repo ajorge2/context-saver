@@ -11,7 +11,7 @@ from pathlib import Path
 
 from thread_tree import connect_db, data_dir, load_scope_config, parse_transcript_lines, utc_now
 from thread_tree_pipeline import enqueue_transcript
-from thread_tree_runtime import worker_command
+from thread_tree_runtime import detached_process_options, worker_command
 from thread_tree_scope import scope_decision
 from thread_tree_state import project_id_for
 
@@ -59,7 +59,7 @@ def main() -> int:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            **detached_process_options(),
         )
         print(
             json.dumps(

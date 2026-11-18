@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/user_prompt_submit.py\"",
+            "command": "uv run --no-project --python 3.12 python -X utf8 -c \"import os,runpy,sys; from pathlib import Path; scripts=Path(os.environ['CLAUDE_PLUGIN_ROOT'])/'scripts'; sys.path.insert(0,str(scripts)); runpy.run_path(str(scripts/'user_prompt_submit.py'),run_name='__main__')\"",
             "timeout": 3,
             "statusMessage": "Staging Context Saver prompt"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/stop.py\"",
+            "command": "uv run --no-project --python 3.12 python -X utf8 -c \"import os,runpy,sys; from pathlib import Path; scripts=Path(os.environ['CLAUDE_PLUGIN_ROOT'])/'scripts'; sys.path.insert(0,str(scripts)); runpy.run_path(str(scripts/'stop.py'),run_name='__main__')\"",
             "timeout": 5,
             "statusMessage": "Queuing Context Saver turn"
           }
@@ -31,7 +31,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/pre_compact.py\"",
+            "command": "uv run --no-project --python 3.12 python -X utf8 -c \"import os,runpy,sys; from pathlib import Path; scripts=Path(os.environ['CLAUDE_PLUGIN_ROOT'])/'scripts'; sys.path.insert(0,str(scripts)); runpy.run_path(str(scripts/'pre_compact.py'),run_name='__main__')\"",
             "timeout": 10,
             "statusMessage": "Recovering Context Saver turns"
           }

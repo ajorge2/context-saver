@@ -12,7 +12,7 @@ import json
 import os
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterator, Sequence
@@ -344,37 +344,42 @@ def search(
     """Return ANN sequence keys and cosine similarities without SQLite scans."""
 
     np, Index = _imports()
-    info = metadata(data_directory, project_id)
     path = _index_path(data_directory, project_id)
-    if (
-        info is None
-        or info.get("embedding_model") != model
-        or int(info.get("dimension", 0)) != len(vector)
-        or not path.exists()
-        or int(info.get("document_count", 0)) == 0
-    ):
-        return [], {
-            "backend": INDEX_BACKEND,
-            "available": False,
-            "document_count": 0,
-            "indexed_through_seq": 0,
-            "candidates_visited": 0,
-        }
-    cache_key = str(path)
-    identity = info["index_file_identity"]
-    with _CACHE_LOCK:
-        cached = _INDEX_CACHE.get(cache_key)
-        if cached is None or cached[0] != identity:
-            cached = (identity, Index.restore(str(path), view=True))
-            if _file_identity(path) != identity:
-                # Publication raced the reader between manifest validation and
-                # mmap. Never pair one model's metadata with another binary.
-                return [], {
-                    "backend": INDEX_BACKEND, "available": False, "document_count": 0,
-                    "indexed_through_seq": 0, "candidates_visited": 0,
-                }
-            _INDEX_CACHE[cache_key] = cached
-        index = cached[1]
+    # Windows cannot replace or remove an index while a reader maps its file.
+    # Copy into memory there and synchronize the brief restore with publishers.
+    # Unix keeps zero-copy mmap and its existing concurrent publication path.
+    read_lock = _write_lock(data_directory, project_id) if os.name == "nt" else nullcontext()
+    with read_lock:
+        info = metadata(data_directory, project_id)
+        if (
+            info is None
+            or info.get("embedding_model") != model
+            or int(info.get("dimension", 0)) != len(vector)
+            or not path.exists()
+            or int(info.get("document_count", 0)) == 0
+        ):
+            return [], {
+                "backend": INDEX_BACKEND,
+                "available": False,
+                "document_count": 0,
+                "indexed_through_seq": 0,
+                "candidates_visited": 0,
+            }
+        cache_key = str(path)
+        identity = info["index_file_identity"]
+        with _CACHE_LOCK:
+            cached = _INDEX_CACHE.get(cache_key)
+            if cached is None or cached[0] != identity:
+                cached = (identity, Index.restore(str(path), view=os.name != "nt"))
+                if _file_identity(path) != identity:
+                    # Publication raced the reader between manifest validation
+                    # and mmap. Keep metadata paired with its exact binary.
+                    return [], {
+                        "backend": INDEX_BACKEND, "available": False, "document_count": 0,
+                        "indexed_through_seq": 0, "candidates_visited": 0,
+                    }
+                _INDEX_CACHE[cache_key] = cached
+            index = cached[1]
     count = min(max(1, int(limit)), len(index))
     exact = len(index) <= 1000
     matches = index.search(np.asarray(vector, dtype=np.float32), count, exact=exact)

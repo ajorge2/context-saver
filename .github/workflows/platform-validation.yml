@@ -1,0 +1,71 @@
+name: Native platform validation
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-platform:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      UV_PYTHON: "3.12"
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      DO_NOT_TRACK: "1"
+      DISABLE_AUTOUPDATER: "1"
+      CONTEXT_SAVER_TEST_REPORTS: ${{ runner.temp }}/context-saver-reports
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.9.5"
+      - name: Install pinned test runtime
+        run: uv pip install --system mcp==1.26.0 fastembed==0.9.1 usearch==2.26.6
+      - name: Install native coding hosts
+        run: npm install --global @openai/codex@0.157.1 @anthropic-ai/claude-code@2.1.312
+      - name: Install Windows terminal adapter
+        if: runner.os == 'Windows'
+        run: uv pip install --system pywinpty==3.0.2
+      - name: Install browser
+        working-directory: tests/browser
+        run: |
+          npm install --ignore-scripts --no-package-lock
+          npx playwright install --with-deps chromium
+      - name: Run regression and native runtime tests
+        run: python tests/run.py
+      - name: Run browser regression tests
+        if: always()
+        working-directory: tests/browser
+        run: |
+          npm test
+          npm run test:e2e
+      - name: Run installed host acceptance
+        if: always()
+        run: python tests/native_hosts.py
+      - name: Review native trust and upgrade
+        if: always()
+        run: python tests/native_trust.py
+      - name: Save synthetic diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: context-saver-${{ matrix.os }}
+          path: ${{ runner.temp }}/context-saver-reports
+          if-no-files-found: warn

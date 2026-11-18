@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test public-viewer-chrome.test.js context-explorer-model.test.js",
+    "test:e2e": "playwright test --workers=1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.56.0"
+  }
+}

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import sqlite3
+import time
 import uuid
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timedelta, timezone
@@ -66,13 +67,18 @@ def exclusive_process_lock(path: Path, *, blocking: bool = True) -> Iterator[Non
             import msvcrt
 
             lock.seek(0)
-            try:
-                mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
-                msvcrt.locking(lock.fileno(), mode, 1)
-            except OSError as error:
-                if not blocking and error.errno in (errno.EACCES, errno.EAGAIN):
-                    raise BlockingIOError(error.errno, str(error)) from error
-                raise
+            while True:
+                try:
+                    msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError as error:
+                    if error.errno not in (errno.EACCES, errno.EAGAIN):
+                        raise
+                    if not blocking:
+                        raise BlockingIOError(error.errno, str(error)) from error
+                    # LK_LOCK gives up after ten retries. Maintenance must
+                    # instead wait for its owner just as flock does on Unix.
+                    time.sleep(0.05)
         else:
             import fcntl
 
