@@ -57,7 +57,7 @@ Once a connected chat has some history, ask the agent a question like **“What 
 
 ## Supported platforms
 
-The native validation suite runs with Codex CLI 0.157.1 and Claude Code 2.1.312 using fresh profiles, synthetic chats, and local test responses.
+The [native validation suite](docs/platform-validation.md) runs with Codex CLI 0.157.1 and Claude Code 2.1.312 using fresh profiles, synthetic chats, and local test responses.
 
 | Platform | Validated environment |
 |---|---|
