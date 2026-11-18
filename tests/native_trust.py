@@ -91,6 +91,8 @@ def verify_claude_trust(reports: Path) -> None:
                         if not database.exists():
                             return False
                         with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as db:
+                            if not db.execute("SELECT 1 FROM sqlite_master WHERE name='turn_ingestion'").fetchone():
+                                return False
                             turns = db.execute("SELECT state, transcript_path FROM turn_ingestion").fetchall()
                             if not turns or turns[0][0] != "indexed":
                                 return False

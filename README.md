@@ -1,6 +1,6 @@
 # Context Saver
 
-Context Saver is a **Codex and Claude Code plugin** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
+Context Saver is a **Codex and Claude Code plugin for macOS, Linux, and Windows** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
 
 [Install the plugin](#install) · [Open the viewer](#open-the-viewer)
 
@@ -10,7 +10,7 @@ Context Saver is a **Codex and Claude Code plugin** with a browser viewer for yo
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and make sure your coding client can find it on its PATH. Context Saver uses uv to select Python 3.12 and install its pinned runtime dependencies on first use.
 
-Copy the command for your client into Terminal.
+Copy the commands for your client into a terminal.
 
 ### Codex
 
@@ -44,7 +44,7 @@ The viewer opens in your browser. Select a project to browse its subjects, broad
 ```sh
 git clone https://github.com/ajorge2/context-saver.git
 cd context-saver
-uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 python plugins/thread-tree/scripts/thread_tree.py serve --port 0 --open
+uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 python -X utf8 plugins/thread-tree/scripts/thread_tree.py serve --port 0 --open
 ```
 
 Keep this Terminal window open while you use the viewer.
@@ -54,6 +54,18 @@ Keep this Terminal window open while you use the viewer.
 ## Ask for an earlier decision
 
 Once a connected chat has some history, ask the agent a question like **“What condition did we agree on for retrying the deployment?”** Context Saver gives it relevant excerpts and their sources when the current conversation lacks that detail.
+
+## Supported platforms
+
+The native validation suite runs with Codex CLI 0.157.1 and Claude Code 2.1.312 using fresh profiles, synthetic chats, and local test responses.
+
+| Platform | Validated environment |
+|---|---|
+| macOS | macOS 15 on Apple Silicon |
+| Linux x64 | Ubuntu 24.04 |
+| Windows x64 | Native Windows Server 2025 |
+
+The commands above work in Bash and PowerShell. If you just installed uv, restart your coding client so it picks up the updated PATH. On upgrade, review the changed hooks when Codex requests it. Existing saved messages stay available while Context Saver updates their local embeddings for the portable model.
 
 ## Where your data goes
 

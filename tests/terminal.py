@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import suppress
 from pathlib import Path
 import queue
 import re
@@ -117,12 +118,18 @@ class Terminal:
                     time.sleep(0.05)
             if self.alive():
                 if self.windows:
-                    self.process.terminate(force=True)
+                    subprocess.run(
+                        ["taskkill", "/PID", str(self.process.pid), "/T", "/F"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=10,
+                    )
+                    if self.alive():
+                        raise AssertionError(f"Native terminal process {self.process.pid} did not exit")
                 else:
                     os.killpg(self.process.pid, signal.SIGKILL)
         finally:
             if self.windows:
-                self.process.close(force=True)
+                with suppress(PermissionError, ProcessLookupError):
+                    self.process.close(force=True)
             else:
                 self.process.wait(timeout=8)
                 os.close(self.master)

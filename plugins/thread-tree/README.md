@@ -1,6 +1,6 @@
 # Context Saver
 
-Context Saver is a plugin for Codex and Claude Code on macOS. Use the browser viewer to explore your saved chats, or ask your coding agent to recover an earlier decision with its source.
+Context Saver is a plugin for Codex and Claude Code on macOS, Linux, and Windows. Use the browser viewer to explore your saved chats, or ask your coding agent to recover an earlier decision with its source.
 
 In Codex, attach **Context Saver** and send **Open Context Saver**. In Claude Code, run `/thread-tree:context-saver Open Context Saver`.
 

@@ -146,6 +146,7 @@ def approve_native_hook(project: Path, environment: dict[str, str], profile: Pat
     """Approve one exact command through the native API used by Codex's UI."""
     assert hook["trustStatus"] in {"untrusted", "modified"}, hook
     before = read_trusts(profile)
+    before_status = list_hooks(project, environment, log.with_stem(log.stem + "-before"))
     native_request(project, environment, "config/batchWrite", {
         "edits": [{"keyPath": "hooks.state", "value": {hook["key"]: {"trusted_hash": hook["currentHash"]}},
                    "mergeStrategy": "upsert"}],
@@ -155,6 +156,12 @@ def approve_native_hook(project: Path, environment: dict[str, str], profile: Pat
     assert after[hook["key"]]["trusted_hash"] == hook["currentHash"], after
     assert {key: value for key, value in after.items() if key != hook["key"]} == {
         key: value for key, value in before.items() if key != hook["key"]}, (before, after)
+    after_status = list_hooks(project, environment, log.with_stem(log.stem + "-after"))
+    previous = {row["key"]: row for row in before_status}
+    for row in after_status:
+        expected = "trusted" if row["key"] == hook["key"] else previous[row["key"]]["trustStatus"]
+        assert row["trustStatus"] == expected, (before_status, after_status)
+    log.with_suffix(".json").write_text(json.dumps({"before": before_status, "after": after_status}, indent=2), encoding="utf-8")
 
 
 def wait_until(condition, description: str, timeout: float = 45) -> None:
@@ -171,6 +178,8 @@ def indexed_turns(store: Path) -> list[tuple]:
     if not database.exists():
         return []
     with closing(sqlite3.connect(database)) as db:
+        if not db.execute("SELECT 1 FROM sqlite_master WHERE name='turn_ingestion'").fetchone():
+            return []
         return db.execute("SELECT id, state, transcript_path FROM turn_ingestion ORDER BY created_at, id").fetchall()
 
 
@@ -181,47 +190,41 @@ def run_answer(project: Path, environment: dict[str, str], prompt: str, log: Pat
     assert ANSWER in output, output
 
 
-def review_hooks(project: Path, environment: dict[str, str], profile: Path,
-                 expected_count: int, log: Path) -> None:
-    """Approve each selected command individually in Codex's actual /hooks UI."""
+def inspect_hook(project: Path, environment: dict[str, str], profile: Path,
+                 event: str, log: Path) -> None:
+    """Observe the native command detail without granting keyboard approval."""
     command = host_command("codex") + ["--no-daemon", "--no-alt-screen", "-C", str(project)]
-    for index in range(expected_count):
-        terminal = Terminal(command, project, environment, log.with_stem(f"{log.stem}-{index + 1}"))
-        try:
-            terminal.wait(lambda: "Hooks need review" in terminal.display or "context-saver-fixture" in terminal.display,
-                          "Displaying native Codex hook review or the initialized session")
-            if "Hooks need review" in terminal.display:
-                # Let the protected startup screen finish draining terminal
-                # replies. Escape safely continues without granting trust.
-                time.sleep(0.3)
-                for _ in range(4):
-                    if "context-saver-fixture" in terminal.display:
-                        break
-                    terminal.send("\x1b")
-                    time.sleep(0.3)
-            terminal.wait(lambda: "context-saver-fixture" in terminal.display,
-                          "Finishing Codex session initialization")
+    before = read_trusts(profile)
+    terminal = Terminal(command, project, environment, log)
+    try:
+        terminal.wait(lambda: "Hooks need review" in terminal.display or "context-saver-fixture" in terminal.display,
+                      "Displaying native Codex hook review or the initialized session")
+        if "Hooks need review" in terminal.display:
+            # Escape safely skips startup approval while terminal replies drain.
             time.sleep(0.3)
-            terminal.send("/hooks")
-            time.sleep(0.15)
-            terminal.send("\r")
-            terminal.wait(lambda: "hooks need review before" in terminal.display or "hook needs review before" in terminal.display,
-                          "Opening the /hooks event browser")
-            before = read_trusts(profile)
-            time.sleep(0.15)
-            terminal.send("\r")
-            terminal.wait(lambda: "review required" in terminal.display and "Trust" in terminal.display,
-                          "Reviewing the selected hook command")
-            terminal.send("t")
-            terminal.wait(lambda: read_trusts(profile) != before, "Persisting one native hook approval")
-            after = read_trusts(profile)
-            assert len(after) == len(before) + 1, (before, after)
-            assert all(after[key] == value for key, value in before.items()), (before, after)
-            terminal.send("\x1b")
-            time.sleep(0.15)
-            terminal.send("\x1b")
-        finally:
-            terminal.close()
+            for _ in range(4):
+                if "context-saver-fixture" in terminal.display:
+                    break
+                terminal.send("\x1b")
+                time.sleep(0.3)
+        terminal.wait(lambda: "context-saver-fixture" in terminal.display,
+                      "Finishing Codex session initialization")
+        time.sleep(0.3)
+        terminal.send("/hooks")
+        time.sleep(0.15)
+        terminal.send("\r")
+        terminal.wait(lambda: "hooks need review before" in terminal.display or "hook needs review before" in terminal.display,
+                      "Opening the /hooks event browser")
+        time.sleep(0.15)
+        terminal.send("\r")
+        terminal.wait(lambda: f"{event} hooks" in terminal.display and "review required" in terminal.display
+                             and "Trust" in terminal.display,
+                      "Inspecting the untrusted native hook command")
+    finally:
+        # Text such as /exit contains the /hooks trust-all shortcut. Close the
+        # terminal without sending text into a view whose state may change.
+        terminal.close(entered=False)
+    assert read_trusts(profile) == before, "Inspecting /hooks must not grant trust"
 
 
 async def verify_retained_source(installed: Path, project: Path, environment: dict[str, str]) -> dict:
@@ -275,9 +278,9 @@ def main() -> None:
                 assert not indexed_turns(store), indexed_turns(store)
                 assert not read_trusts(profile)
 
-                review_hooks(project, environment, profile, 1, reports / "codex-review-first.txt")
+                inspect_hook(project, environment, profile, "PreCompact", reports / "codex-review-first.txt")
                 remaining = list_hooks(project, environment, reports / "codex-inventory-after-ui.log")
-                assert sum(row["trustStatus"] == "trusted" for row in remaining) == 1, remaining
+                assert {row["trustStatus"] for row in remaining} == {"untrusted"}, remaining
                 for hook in remaining:
                     if hook["trustStatus"] == "untrusted":
                         approve_native_hook(project, environment, profile, hook,
@@ -320,6 +323,7 @@ def main() -> None:
                            reports / "codex-modified-stop-turn.jsonl")
                 assert indexed_turns(store) == [original], indexed_turns(store)
 
+                inspect_hook(project, environment, profile, "Stop", reports / "codex-review-upgraded.txt")
                 modified, = [row for row in changed if row["trustStatus"] == "modified"]
                 approve_native_hook(project, environment, profile, modified, reports / "codex-approve-upgrade.log")
                 run_answer(project, environment, "Retain the synthetic follow-up decision UMBER-852.",
@@ -335,7 +339,8 @@ def main() -> None:
                 serving.join(timeout=5)
         (reports / "codex-trust.json").write_text(json.dumps({
             "platform": sys.platform, "untrusted_hooks_skipped": True, "individual_hook_approval": True,
-            "first_approval_through_terminal": True, "remaining_approvals_through_native_api": True,
+            "new_and_changed_hook_details_observed_in_terminal": True,
+            "all_approvals_through_native_api": True,
             "trusted_turn_indexed_once": True, "only_changed_hook_requires_review": True,
             "changed_hook_skipped_until_review": True, "upgraded_turn_indexed_once": True,
             "original_source_verified_after_upgrade": True,
