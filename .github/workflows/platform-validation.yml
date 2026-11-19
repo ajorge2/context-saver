@@ -122,9 +122,11 @@ jobs:
         if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
         timeout-minutes: 5
         run: python tests/run.py
-      - name: Run terminal driver regression tests
+      - name: Run terminal and host-probe regression tests
         if: inputs.focus == 'host-trust' || inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '-trust]')
-        run: python -m unittest discover -s tests -p test_terminal_arguments.py -v
+        run: |
+          python -m unittest discover -s tests -p test_terminal_arguments.py -v
+          python -m unittest discover -s tests -p test_native_host_diagnostics.py -v
       - name: Run browser regression tests
         if: always() && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
         timeout-minutes: 6

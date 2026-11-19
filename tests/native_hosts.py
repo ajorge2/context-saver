@@ -75,10 +75,26 @@ def isolated_environment(root: Path) -> dict[str, str]:
     return environment
 
 
-def run_host(host: str, *args: str, project: Path, env: dict[str, str], timeout: int = 120) -> str:
+def run_host(host: str, *args: str, project: Path, env: dict[str, str], timeout: int = 120,
+             output_path: Path | None = None) -> str:
     command = host_command(host) + (["--no-daemon"] if host == "codex" else []) + list(args)
-    result = subprocess.run(command, cwd=project, env=env, capture_output=True,
-                            encoding="utf-8", timeout=timeout, stdin=subprocess.DEVNULL)
+
+    def preserve(stdout, stderr):
+        if output_path is not None:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            for path, value in ((output_path, stdout), (output_path.with_suffix(".stderr.txt"), stderr)):
+                path.write_text(value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value or "", encoding="utf-8")
+
+    try:
+        result = subprocess.run(command, cwd=project, env=env, capture_output=True,
+                                encoding="utf-8", timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as error:
+        preserve(error.stdout, error.stderr)
+        raise
+    except OSError as error:
+        preserve("", str(error))
+        raise
+    preserve(result.stdout, result.stderr)
     if result.returncode:
         raise AssertionError(f"{host} {args!r} failed ({result.returncode})\n{result.stdout}\n{result.stderr}")
     return result.stdout
@@ -173,40 +189,94 @@ async def verify_installed_mcp(installed: Path, project: Path, env: dict[str, st
             assert any("not configured" in getattr(item, "text", "") for item in result.content)
 
 
-def verify_claude_turn(project: Path, root: Path, env: dict[str, str]) -> None:
+def _claude_index_snapshot(store: Path) -> dict:
+    result = {"turns": [], "staged": [], "answer_chunks": 0, "active_fits": []}
+    database = store / "index.sqlite3"
+    if not database.exists():
+        return result
+    try:
+        with closing(sqlite3.connect(f"{database.resolve().as_uri()}?mode=ro", uri=True, timeout=0.2)) as db:
+            tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "turn_ingestion" in tables:
+                result["turns"] = db.execute("SELECT state, transcript_path FROM turn_ingestion").fetchall()
+            if "staged_user_prompts" in tables:
+                result["staged"] = [row[0] for row in db.execute("SELECT state FROM staged_user_prompts")]
+            if "turn_chunks" in tables:
+                result["answer_chunks"] = db.execute("SELECT COUNT(*) FROM turn_chunks WHERE instr(text, ?) > 0", (CLAUDE_FIXTURE_ANSWER,)).fetchone()[0]
+            if "fit_runs" in tables:
+                result["active_fits"] = db.execute("SELECT state FROM fit_runs WHERE state IN ('queued','running')").fetchall()
+    except sqlite3.Error as error:
+        result["read_error"] = str(error)
+    return result
+
+
+def _wait_claude_index(store: Path, *, timeout: float = 30) -> dict:
+    deadline = time.monotonic() + timeout
+    previous = None
+    while True:
+        current = _claude_index_snapshot(store)
+        terminal = bool(current["turns"]) and all(row[0] in ("indexed", "failed", "evicted") for row in current["turns"])
+        if terminal and not current["active_fits"] and current == previous:
+            return {**current, "settled": True}
+        if time.monotonic() >= deadline:
+            return {**current, "settled": False}
+        previous = current
+        time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+
+
+def verify_claude_turn(project: Path, root: Path, env: dict[str, str], reports: Path | None = None) -> None:
     store = Path(env["THREAD_HISTORY_TREE_DATA"])
+    reports = reports or root
+    reports.mkdir(parents=True, exist_ok=True)
+    output_path = reports / "claude-output.jsonl"
     save_scope_config(store, {"configured": True, "projects": [{"path": str(project), "includeNewChats": True}]})
     (store / "config.json").write_text('{"embedding_provider":"disabled"}', encoding="utf-8")
-    with ThreadingHTTPServer(("127.0.0.1", 0), ClaudeFixtureAPI) as server:
-        serving = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-        serving.start()
-        environment = {**env, "ANTHROPIC_API_KEY": "synthetic-context-saver-testing",
-                       "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_port}"}
-        try:
-            output = run_host("claude", "-p", "Return the synthetic integration answer.",
-                              "--model", "sonnet", "--output-format", "stream-json", "--verbose",
-                              "--include-hook-events", "--tools", "", project=project, env=environment)
-        finally:
-            server.shutdown()
-            serving.join(timeout=5)
-    (root / "claude-output.jsonl").write_text(output, encoding="utf-8")
+    output = ""
+    try:
+        with ThreadingHTTPServer(("127.0.0.1", 0), ClaudeFixtureAPI) as server:
+            serving = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+            serving.start()
+            environment = {**env, "ANTHROPIC_API_KEY": "synthetic-context-saver-testing",
+                           "ANTHROPIC_BASE_URL": f"http://127.0.0.1:{server.server_port}"}
+            try:
+                output = run_host("claude", "-p", "Return the synthetic integration answer.",
+                                  "--model", "sonnet", "--output-format", "stream-json", "--verbose",
+                                  "--include-hook-events", "--tools", "", project=project, env=environment,
+                                  output_path=output_path)
+            finally:
+                server.shutdown()
+                serving.join(timeout=5)
+    finally:
+        # Wait for the fixture's detached worker even when a hook was cancelled.
+        # Preserve evidence outside the disposable profile before asserting.
+        index = _wait_claude_index(store)
+        if not output_path.exists():
+            output_path.write_text(output, encoding="utf-8")
+        hook_diagnostics = []
+        for line in output_path.read_text(encoding="utf-8").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and event.get("subtype") == "hook_response":
+                hook_diagnostics.append((event.get("hook_event"), event.get("outcome")))
+        (reports / "claude-hooks.json").write_text(json.dumps(hook_diagnostics, indent=2), encoding="utf-8")
+        hook_errors = store / "hook-errors.jsonl"
+        if hook_errors.exists():
+            shutil.copyfile(hook_errors, reports / "claude-hook-errors.jsonl")
+        (reports / "claude-index.json").write_text(json.dumps(index, indent=2), encoding="utf-8")
     events = [json.loads(line) for line in output.splitlines() if line.startswith("{")]
     hooks = [(event["hook_event"], event.get("outcome"))
              for event in events if event.get("subtype") == "hook_response"]
     assert hooks == [("UserPromptSubmit", "success"), ("Stop", "success")], hooks
     assert any(event.get("result") == CLAUDE_FIXTURE_ANSWER for event in events), events
     assert not (store / "hook-errors.jsonl").exists()
-    with closing(sqlite3.connect(store / "index.sqlite3")) as db:
-        deadline = time.monotonic() + 30
-        while True:
-            turns = db.execute("SELECT state, transcript_path FROM turn_ingestion").fetchall()
-            if any(state == "indexed" for state, _ in turns) or time.monotonic() >= deadline:
-                break
-            time.sleep(0.1)
-        assert len(turns) == 1 and turns[0][0] == "indexed", turns
-        assert Path(turns[0][1]).resolve().is_relative_to(Path(env["CLAUDE_CONFIG_DIR"]).resolve()), turns
-        assert db.execute("SELECT state FROM staged_user_prompts").fetchall() == [("reconciled",)]
-        assert db.execute("SELECT 1 FROM turn_chunks WHERE instr(text, ?) > 0", (CLAUDE_FIXTURE_ANSWER,)).fetchone()
+    turns = index["turns"]
+    assert index["settled"], index
+    assert len(turns) == 1 and turns[0][0] == "indexed", index
+    assert Path(turns[0][1]).resolve().is_relative_to(Path(env["CLAUDE_CONFIG_DIR"]).resolve()), index
+    assert index["staged"] == ["reconciled"], index
+    assert index["answer_chunks"] > 0, index
 
 
 def main() -> None:
@@ -222,7 +292,7 @@ def main() -> None:
             installed = install_marketplace(root, project, env, host)
             asyncio.run(asyncio.wait_for(verify_installed_mcp(installed, project, env, host), timeout=120))
             if host == "claude":
-                verify_claude_turn(project, root, env)
+                verify_claude_turn(project, root, env, reports)
             outcomes[host] = {"installed": True, "mcp_connected": True, "completed_turn": host == "claude"}
             print(f"{host}: native install and MCP passed", flush=True)
     (reports / "native-hosts.json").write_text(json.dumps(outcomes, indent=2), encoding="utf-8")
