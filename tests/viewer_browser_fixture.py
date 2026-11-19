@@ -34,7 +34,7 @@ def snapshot(path: Path) -> str:
         return hasher.hexdigest()
 
 
-def serve(*, fail_first_refresh: bool = False) -> None:
+def serve(*, fail_first_refresh: bool = False, large_browse: bool = False) -> None:
     with fixtures.isolated_runtime() as (root, data):
         config_path = data / "config.json"
         config = json.loads(config_path.read_text(encoding="utf-8"))
@@ -55,10 +55,17 @@ def serve(*, fail_first_refresh: bool = False) -> None:
         ):
             transcript = folder / f"fixture-{len(seeded)}.jsonl"
             thread_id = f"fixture-chat-{len(seeded)}"
-            fixtures.write_codex_transcript(transcript, folder, thread_id, [(question, reply)])
+            turns = [(question, reply)]
+            if large_browse and not seeded:
+                turns.extend(
+                    (f"Synthetic {'optimization' if index < 100 else 'inventory'} message {index:03d}",
+                     f"Synthetic answer {index:03d} keeps this fixture message unique.")
+                    for index in range(130)
+                )
+            fixtures.write_codex_transcript(transcript, folder, thread_id, turns)
             project = pipeline.enqueue_transcript(transcript)
             processed = pipeline.process_project(project["project_id"])
-            if processed["failures"] or processed["processed_turns"] != 1:
+            if processed["failures"] or processed["processed_turns"] != len(turns):
                 raise RuntimeError("Could not seed fixture turn")
             seeded.append(project["project_id"])
             sources.append([str(transcript), hashlib.sha256(transcript.read_bytes()).hexdigest()])
@@ -71,6 +78,11 @@ def serve(*, fail_first_refresh: bool = False) -> None:
             registry.executemany("INSERT INTO project_roots VALUES (?)", [(str(path.resolve()),) for path in (selected, excluded)])
             registry.executemany("INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?)", registry_chats)
         fixtures.activate_projects(selected)
+        with closing(thread_tree.connect_db()) as db:
+            browse_message_ids = [f"message:{row[0]}" for row in db.execute(
+                "SELECT id FROM turn_chunks WHERE project_id=? AND evicted=0 ORDER BY seq DESC, id DESC",
+                (seeded[0],),
+            )]
         refresh_attempts = 0
 
         def rebuild_command(worker, job_id, project_ids):
@@ -89,6 +101,7 @@ def serve(*, fail_first_refresh: bool = False) -> None:
                 "excludedProject": seeded[1],
                 "selectedProject": seeded[0],
                 "sources": sources,
+                "browseMessageIds": browse_message_ids,
             }), flush=True)
             server.serve_forever()
 
@@ -102,4 +115,7 @@ if __name__ == "__main__":
         print(snapshot(Path(sys.argv[2])))
     else:
         signal.signal(signal.SIGTERM, stop)
-        serve(fail_first_refresh="--fail-first-refresh" in sys.argv[1:])
+        serve(
+            fail_first_refresh="--fail-first-refresh" in sys.argv[1:],
+            large_browse="--large-browse" in sys.argv[1:],
+        )

@@ -93,16 +93,15 @@ class ThreadTreeTests(unittest.TestCase):
                 "refresh_" + ("a" * 32),
                 ["project-one"],
             )
-        self.assertEqual(command[:8], [
+        self.assertEqual(command[:5], [
             "/opt/homebrew/bin/uv",
             "run",
             "--no-project",
             "--python",
             "3.12",
-            "--with",
-            "usearch==2.26.6",
-            "python",
         ])
+        for requirement in thread_tree.SEMANTIC_REQUIREMENTS:
+            self.assertIn(requirement, command)
         self.assertEqual(command[-3:], [str(worker), "refresh_" + ("a" * 32), "project-one"])
 
     def test_precompact_notice_names_active_automation_and_disable_path(self) -> None:

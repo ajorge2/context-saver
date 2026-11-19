@@ -9,7 +9,6 @@ credentials are present.
 from __future__ import annotations
 
 import hashlib
-import heapq
 import json
 import math
 import re
@@ -23,6 +22,7 @@ from typing import Any, Iterable, Iterator, Mapping, Sequence
 import thread_tree_state as state
 import thread_tree_scope as scope
 import thread_tree_vector_index as vector_index
+import thread_tree_labels as labels
 
 
 DEFAULT_FIT_THRESHOLDS = {"span": 8, "specific": 16, "broad": 32}
@@ -352,7 +352,10 @@ def _node_candidates(db: sqlite3.Connection, project_id: str, layer: str) -> lis
     return [
         dict(row)
         for row in db.execute(
-            "SELECT * FROM semantic_nodes WHERE project_id = ? AND layer = ? AND lifecycle IN ('locked','unlocked')",
+            """SELECT n.* FROM semantic_nodes n WHERE n.project_id = ? AND n.layer = ?
+               AND n.lifecycle IN ('locked','unlocked')
+               AND EXISTS (SELECT 1 FROM semantic_node_memberships m JOIN turn_chunks c ON c.id=m.chunk_id
+                           WHERE m.node_id=n.id AND c.project_id=n.project_id AND c.evicted=0)""",
             (project_id, layer),
         )
     ]
@@ -508,152 +511,116 @@ def _deterministic_cluster_groups(
 def _guard_deterministic_fallback_size(row_count: int) -> None:
     if row_count > DETERMINISTIC_FALLBACK_MAX_ROWS:
         raise RuntimeError(
-            "Scalable clustering runtime is unavailable for "
-            f"{row_count} rows; install the pinned NumPy/USearch runtime."
+            "Lexical-only clustering is limited to "
+            f"{DETERMINISTIC_FALLBACK_MAX_ROWS} rows ({row_count} supplied); "
+            "finish local embedding backfill and fit with the pinned UMAP/HDBSCAN runtime."
         )
-
-
-def _usearch_cluster_groups(
-    rows: list[dict[str, Any]],
-    vectors: list[list[float]],
-    layer: str,
-) -> list[dict[str, Any]]:
-    """Bound the deterministic fallback for large embedded fit inputs.
-
-    The pairwise fallback is useful and reproducible for small groups, but it
-    is quadratic and previously timed out on a 2,383-chunk project. USearch's
-    native centroid clustering keeps the shipped no-BERTopic runtime bounded;
-    BERTopic/HDBSCAN still remains the preferred path when installed.
-    """
-
-    if len(rows) < 1_000:
-        return []
-    import numpy as np
-    from usearch.index import Index
-
-    target_count = max(2, min(512, math.ceil(len(rows) / LOCK_SIZES[layer])))
-    index = Index(
-        ndim=len(vectors[0]),
-        metric="cos",
-        dtype="f32",
-        connectivity=16,
-        expansion_add=128,
-        expansion_search=96,
-    )
-    keys = np.arange(len(rows), dtype=np.uint64)
-    index.add(keys, np.asarray(vectors, dtype=np.float32))
-    clustered = index.cluster(min_count=target_count, max_count=target_count)
-    centroid_keys = np.asarray(clustered.matches.keys).reshape(-1)
-    distances = np.asarray(clustered.matches.distances).reshape(-1)
-    grouped: dict[int, list[tuple[dict[str, Any], float]]] = {}
-    for row_key, centroid_key, distance in zip(
-        np.asarray(clustered.queries).reshape(-1),
-        centroid_keys,
-        distances,
-    ):
-        grouped.setdefault(int(centroid_key), []).append(
-            (rows[int(row_key)], max(0.0, min(1.0, 1.0 - float(distance))))
-        )
-    result: list[dict[str, Any]] = []
-    for members in grouped.values():
-        member_rows = [row for row, _ in members]
-        persistence = _cluster_persistence(member_rows)
-        result.append(
-            {
-                "rows": member_rows,
-                "persistence": persistence,
-                "confidences": {
-                    str(row["id"]): confidence for row, confidence in members
-                },
-                "provider": "usearch-centroid-fallback",
-            }
-        )
-    return result
 
 
 def _cluster_groups(rows: list[dict[str, Any]], layer: str) -> list[dict[str, Any]]:
-    """Use BERTopic/HDBSCAN when installed, otherwise a deterministic fallback."""
+    """Fit density groups at this layer's grain; retain explicit lexical mode."""
 
-    vectors = [_vector(row.get("embedding")) for row in rows]
-    if rows and all(vectors) and len({len(vector) for vector in vectors}) == 1:
-        try:
-            import numpy as np
-            from bertopic import BERTopic
-            from hdbscan import HDBSCAN
-            from umap import UMAP
+    from thread_tree_clustering import DensityClusteringError, cluster_embeddings
 
-            minimum = FORMATION_SIZES[layer]
-            hdbscan_model = HDBSCAN(
-                min_cluster_size=minimum,
-                min_samples=max(1, minimum // 2),
-                metric="euclidean",
-                cluster_selection_method="eom",
-                prediction_data=True,
-            )
-            reducer = UMAP(
-                n_neighbors=max(2, min(15, len(rows) - 1)),
-                n_components=max(2, min(5, len(rows) - 1)),
-                min_dist=0.0,
-                metric="cosine",
-                random_state=42,
-            )
-            model = BERTopic(
-                embedding_model=None,
-                umap_model=reducer,
-                hdbscan_model=hdbscan_model,
-                calculate_probabilities=True,
-                verbose=False,
-            )
-            topics, probabilities = model.fit_transform([row["text"] for row in rows], np.asarray(vectors))
-            persistence_values = list(getattr(hdbscan_model, "cluster_persistence_", []))
-            grouped: dict[int, list[tuple[int, dict[str, Any]]]] = {}
-            for index, topic in enumerate(topics):
-                if int(topic) >= 0:
-                    grouped.setdefault(int(topic), []).append((index, rows[index]))
-            result = []
-            assigned_ids: set[str] = set()
-            for topic, members in grouped.items():
-                persistence = float(persistence_values[topic]) if topic < len(persistence_values) else 0.0
-                confidences: dict[str, float] = {}
-                for index, row in members:
-                    probability = probabilities[index] if probabilities is not None else persistence
-                    if hasattr(probability, "__len__") and not isinstance(probability, (str, bytes)):
-                        probability = max(float(value) for value in probability) if len(probability) else persistence
-                    confidences[row["id"]] = max(0.0, min(1.0, float(probability)))
-                member_rows = [row for _, row in members]
-                assigned_ids.update(str(row["id"]) for row in member_rows)
-                result.append({"rows": member_rows, "persistence": persistence, "confidences": confidences, "provider": "bertopic+hdbscan"})
-            if layer != "span":
-                # Every semantic child needs one structural parent even when
-                # HDBSCAN considers it an outlier. A singleton parent stays
-                # unlocked until enough descendant evidence supports locking.
-                for row in rows:
-                    if str(row["id"]) not in assigned_ids:
-                        result.append({
-                            "rows": [row],
-                            "persistence": 0.0,
-                            "confidences": {str(row["id"]): 0.0},
-                            "provider": "bertopic-outlier-wrapper",
-                        })
-            return result
-        except (ImportError, ValueError, RuntimeError):
-            pass
-        try:
-            scalable = _usearch_cluster_groups(rows, vectors, layer)
-            if scalable:
-                return scalable
-        except (ImportError, ValueError, RuntimeError):
-            pass
-    _guard_deterministic_fallback_size(len(rows))
-    return _deterministic_cluster_groups(rows, layer)
+    if not rows:
+        return []
+    # Dependency-free operation is still possible before semantic backfill.
+    # Partly embedded input must wait for backfill rather than silently mixing
+    # lexical and semantic geometry in one authoritative fit.
+    if all(row.get("embedding") in (None, "", "[]", []) for row in rows):
+        _guard_deterministic_fallback_size(len(rows))
+        result = _deterministic_cluster_groups(rows, layer)
+        for group in result:
+            group["provider"] = "lexical-no-embeddings"
+        return result
+    try:
+        vectors = [_vector(row.get("embedding")) for row in rows]
+    except (TypeError, ValueError, OverflowError) as error:
+        raise DensityClusteringError("Invalid embedding in semantic fit input.") from error
+    fitted = cluster_embeddings(vectors, min_cluster_size=FORMATION_SIZES[layer])
+    grouped: dict[int, list[int]] = {}
+    for index, label in enumerate(fitted.labels):
+        if label >= 0:
+            grouped.setdefault(label, []).append(index)
+    result: list[dict[str, Any]] = []
+    for label, indices in grouped.items():
+        result.append({
+            "rows": [rows[index] for index in indices],
+            "persistence": fitted.persistence[label],
+            "confidences": {str(rows[index]["id"]): fitted.confidences[index] for index in indices},
+            "provider": fitted.provider,
+        })
+    if layer != "span":
+        # Structural ancestry is required even when density rejects a semantic
+        # merge. A zero-confidence singleton conserves exactly one child's
+        # evidence and cannot masquerade as a supported semantic cluster.
+        for index, label in enumerate(fitted.labels):
+            if label < 0:
+                result.append({
+                    "rows": [rows[index]],
+                    "persistence": 0.0,
+                    "confidences": {str(rows[index]["id"]): 0.0},
+                    "provider": fitted.provider + "-outlier-wrapper",
+                })
+    return result
 
 
-def _representation(rows: Sequence[Mapping[str, Any]]) -> tuple[str, str, list[str]]:
-    counts = Counter(token for row in rows for token in _tokens(str(row["text"])))
-    keywords = [token for token, _ in counts.most_common(8)]
-    title = " · ".join(word.replace("-", " ").title() for word in keywords[:3]) or "Conversation topic"
-    samples = [str(row["text"]).splitlines()[0][:180] for row in rows[:3]]
-    return title, "; ".join(samples)[:720], keywords
+def _representation(
+    rows: Sequence[Mapping[str, Any]], background: labels.LabelBackground | None = None,
+) -> tuple[str, str, list[str]]:
+    inherited_label = None
+    if len(rows) == 1:
+        row = rows[0]
+        # Upper-layer fit rows contain a semantic child's title and summary;
+        # raw chunk rows also carry seq/thread_id and must never take this path.
+        if row.get("descendant_members") and "seq" not in row and "thread_id" not in row:
+            title, _, summary = str(row.get("text") or "").partition("\n")
+            inherited_label = (title.strip(), summary.strip())
+    return labels.representation(rows, background, inherited_label=inherited_label)
+
+
+def _effective_layer_nodes(
+    db: sqlite3.Connection,
+    run: Mapping[str, Any],
+    layer: str,
+    materialized: Mapping[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    """Combine retained children with this run's not-yet-published replacements."""
+
+    # Empty upper inputs preserve their published parents; their parents must
+    # therefore see those same retained children during this run as well.
+    replacing = layer in materialized and (run["kind"] != "routine" or layer == "span" or bool(materialized[layer]))
+    supported = None if layer == "span" else {
+        chunk_id
+        for child in _effective_layer_nodes(db, run, "span" if layer == "specific" else "specific", materialized)
+        for chunk_id, _ in child["members"]
+    }
+    retained = {
+        str(row["id"]): {**dict(row), "members": []}
+        for row in db.execute(
+            """SELECT * FROM semantic_nodes WHERE project_id=? AND layer=?
+               AND lifecycle!='retired' ORDER BY id""",
+            (run["project_id"], layer),
+        )
+        if not replacing or (run["kind"] == "routine" and row["lifecycle"] == "locked")
+    }
+    for row in db.execute(
+        """SELECT m.node_id, m.chunk_id, m.membership_confidence
+           FROM semantic_node_memberships m
+           JOIN semantic_nodes n ON n.id=m.node_id
+           JOIN turn_chunks c ON c.id=m.chunk_id
+           WHERE n.project_id=? AND n.layer=? AND n.lifecycle!='retired'
+             AND c.project_id=n.project_id AND c.evicted=0 AND c.seq<=?
+           ORDER BY m.node_id, c.seq""",
+        (run["project_id"], layer, run["chunk_watermark"]),
+    ):
+        if row["node_id"] in retained and (supported is None or row["chunk_id"] in supported):
+            retained[row["node_id"]]["members"].append((row["chunk_id"], float(row["membership_confidence"] or 0)))
+    retained.update({str(child["id"]): {
+        **child, "members": [(chunk_id, confidence) for chunk_id, confidence in child["members"]
+                             if supported is None or chunk_id in supported],
+    } for child in materialized.get(layer, [])})
+    return [child for child in retained.values() if child["members"]]
 
 
 def _fit_rows_for_layer(
@@ -676,7 +643,7 @@ def _fit_rows_for_layer(
 
     child_layer = "span" if layer == "specific" else "specific"
     rows = []
-    for child in materialized.get(child_layer, []):
+    for child in _effective_layer_nodes(db, run, child_layer, materialized):
         rows.append({
             "id": str(child["id"]),
             "text": f"{child['title']}\n{child['summary']}",
@@ -707,12 +674,13 @@ def _materialize_layer(
     clusters: Sequence[Mapping[str, Any]],
     *,
     replace_all: bool = False,
+    preserve_existing: bool = False,
     manage_transaction: bool = True,
 ) -> None:
     now = state.utc_now()
     with db if manage_transaction else nullcontext():
         lifecycle_filter = "" if replace_all else "AND lifecycle = 'unlocked'"
-        stale = [row["id"] for row in db.execute(
+        stale = [] if preserve_existing else [row["id"] for row in db.execute(
             f"SELECT id FROM semantic_nodes WHERE project_id = ? AND layer = ? {lifecycle_filter}",
             (project_id, layer),
         )]
@@ -740,6 +708,125 @@ def _materialize_layer(
                 "INSERT INTO semantic_node_memberships(node_id, chunk_id, membership_confidence) VALUES (?, ?, ?)",
                 [(cluster["id"], chunk_id, confidence) for chunk_id, confidence in cluster["members"]],
             )
+
+
+def _ensure_upper_ancestry(db: sqlite3.Connection, run: Mapping[str, Any]) -> None:
+    """Give each live child a complete parent without triggering another fit.
+
+    Debt thresholds still gate upper clustering. Structural singleton parents
+    remain unlocked and can be replaced by the next scheduled upper fit.
+    """
+
+    # Accepted online assignments can arrive while an older fit clusters.
+    # Structural repair covers the current published evidence without moving
+    # the fit's immutable clustering/debt watermark forward.
+    run = {**run, "chunk_watermark": db.execute(
+        "SELECT COALESCE(MAX(seq), 0) FROM turn_chunks WHERE project_id=? AND evicted=0",
+        (run["project_id"],),
+    ).fetchone()[0]}
+    for child_layer, parent_layer in (("span", "specific"), ("specific", "broad")):
+        children = _effective_layer_nodes(db, run, child_layer, {})
+        supported = {chunk_id for child in children for chunk_id, _ in child["members"]}
+        # Parent memberships are inherited evidence. Replaced/retired spans
+        # must not keep supporting old ancestors through raw live chunks.
+        stale_members = [
+            (row["node_id"], row["chunk_id"])
+            for row in db.execute(
+                """SELECT m.node_id, m.chunk_id FROM semantic_node_memberships m
+                   JOIN semantic_nodes n ON n.id=m.node_id
+                   WHERE n.project_id=? AND n.layer=? AND n.lifecycle!='retired'""",
+                (run["project_id"], parent_layer),
+            ) if row["chunk_id"] not in supported
+        ]
+        db.executemany("DELETE FROM semantic_node_memberships WHERE node_id=? AND chunk_id=?", stale_members)
+        db.execute(
+            """DELETE FROM semantic_nodes WHERE project_id=? AND layer=? AND lifecycle!='retired'
+               AND NOT EXISTS (SELECT 1 FROM semantic_node_memberships m WHERE m.node_id=semantic_nodes.id)""",
+            (run["project_id"], parent_layer),
+        )
+        parents = _effective_layer_nodes(db, run, parent_layer, {})
+        parent_members = [{chunk_id for chunk_id, _ in parent["members"]} for parent in parents]
+        wrappers = []
+        for child in children:
+            members = {chunk_id for chunk_id, _ in child["members"]}
+            if any(members <= parent for parent in parent_members):
+                continue
+            wrappers.append({
+                "id": state.stable_id("structural", run["project_id"], parent_layer, child["id"],
+                                      run["id"] if run["kind"] != "routine" else ""),
+                "lifecycle": "unlocked", "title": child["title"], "summary": child["summary"],
+                "keywords": _json_list(child["keywords"]), "persistence": 0.0,
+                "embedding": _vector(child.get("embedding")), "members": list(child["members"]),
+            })
+            parent_members.append(members)
+        if wrappers:
+            _materialize_layer(db, run["project_id"], parent_layer, wrappers,
+                               preserve_existing=True, manage_transaction=False)
+
+
+def _carry_forward_online_members(
+    db: sqlite3.Connection, run: Mapping[str, Any], materialized: Mapping[str, list[dict[str, Any]]],
+) -> None:
+    """Preserve accepted post-watermark evidence without reclustering it."""
+
+    for row in db.execute(
+        """SELECT c.id, s.target_id, s.membership_confidence, s.state AS assignment_state, n.lifecycle
+           FROM turn_chunks c JOIN chunk_layer_states s ON s.chunk_id=c.id AND s.layer='span'
+           JOIN semantic_nodes n ON n.id=s.target_id AND n.layer='span' AND n.project_id=c.project_id
+           JOIN semantic_node_memberships m ON m.node_id=n.id AND m.chunk_id=c.id
+           WHERE c.project_id=? AND c.evicted=0 AND c.seq>? AND n.lifecycle!='retired'""",
+        (run["project_id"], run["chunk_watermark"]),
+    ).fetchall():
+        target = row["target_id"]
+        replacements = {cluster["id"]: cluster for cluster in materialized.get("span", [])}
+        survives = ("span" not in materialized or target in replacements
+                    or (run["kind"] == "routine" and row["lifecycle"] == "locked"))
+        if not survives:
+            # An authoritative density rebuild may remove this prototype.
+            # Its newer evidence remains searchable and must accrue debt.
+            db.execute("""UPDATE chunk_layer_states SET state='unassigned', target_id=NULL,
+                          membership_confidence=NULL, generation_id=NULL, updated_at=? WHERE chunk_id=? AND layer='span'""",
+                       (state.utc_now(), row["id"]))
+            if not db.execute("SELECT 1 FROM fit_debt_events WHERE chunk_id=? AND layer='span' AND consumed_by IS NULL", (row["id"],)).fetchone():
+                state._record_debt_event(db, run["project_id"], "span", row["id"], "prototype_replaced_after_assignment")
+            continue
+        lifecycle = replacements[target]["lifecycle"] if target in replacements else row["lifecycle"]
+        if lifecycle != row["assignment_state"]:
+            db.execute("UPDATE chunk_layer_states SET state=?, updated_at=? WHERE chunk_id=? AND layer='span'",
+                       (lifecycle, state.utc_now(), row["id"]))
+            if lifecycle != "locked" and not db.execute(
+                "SELECT 1 FROM fit_debt_events WHERE chunk_id=? AND layer='span' AND consumed_by IS NULL", (row["id"],),
+            ).fetchone():
+                state._record_debt_event(db, run["project_id"], "span", row["id"], "prototype_unlocked_after_assignment")
+        child_ids = {target}
+        for layer in state.LAYERS:
+            inherited_ids = set()
+            for cluster in materialized.get(layer, []):
+                members = dict(cluster["members"])
+                inherits = (cluster["id"] == target if layer == "span"
+                            else bool(child_ids.intersection(cluster.get("child_ids", []))))
+                if inherits:
+                    members[row["id"]] = max(members.get(row["id"], 0), float(row["membership_confidence"] or 0))
+                    cluster["members"] = sorted(members.items())
+                    inherited_ids.add(cluster["id"])
+            if layer == "span":
+                # The accepted span can survive as a retained locked node.
+                continue
+            if not inherited_ids:
+                # An unscheduled layer (or a no-change routine layer) retains
+                # its existing primary path. Never infer ancestry from member
+                # overlap: one old span may split into several replacements.
+                for child_id in child_ids:
+                    parent = db.execute(
+                        """SELECT n.id, n.lifecycle FROM semantic_edges e JOIN semantic_nodes n ON n.id=e.parent_id
+                           WHERE e.child_id=? AND e.primary_edge=1 AND n.project_id=?
+                             AND n.layer=? AND n.lifecycle!='retired'""", (child_id, run["project_id"], layer),
+                    ).fetchone()
+                    if parent and (layer not in materialized or (
+                        run["kind"] == "routine" and (parent["lifecycle"] == "locked" or not materialized[layer])
+                    )):
+                        inherited_ids.add(parent["id"])
+            child_ids = inherited_ids
 
 
 def _start_fit_phase(
@@ -850,19 +937,22 @@ def _rebuild_edges(
                 "SELECT id FROM semantic_nodes WHERE project_id = ? AND layer = ? AND lifecycle != 'retired'",
                 (project_id, parent_layer),
             ).fetchall()
+            live_members = """SELECT m.chunk_id FROM semantic_node_memberships m
+                              JOIN turn_chunks c ON c.id=m.chunk_id
+                              WHERE m.node_id=? AND c.project_id=? AND c.evicted=0"""
             parent_sets = {
-                row["id"]: {item[0] for item in db.execute("SELECT chunk_id FROM semantic_node_memberships WHERE node_id = ?", (row["id"],))}
+                row["id"]: {item[0] for item in db.execute(live_members, (row["id"], project_id))}
                 for row in parents
             }
             for child in children:
-                child_chunks = {item[0] for item in db.execute("SELECT chunk_id FROM semantic_node_memberships WHERE node_id = ?", (child["id"],))}
+                child_chunks = {item[0] for item in db.execute(live_members, (child["id"], project_id))}
                 if not child_chunks:
                     continue
                 scored = sorted(
                     ((len(child_chunks & chunks) / len(child_chunks), parent_id) for parent_id, chunks in parent_sets.items()),
                     reverse=True,
                 )
-                if scored and scored[0][0] > 0:
+                if scored and scored[0][0] == 1:
                     coverage, parent_id = scored[0]
                     db.execute(
                         "INSERT INTO semantic_edges(child_id, parent_id, primary_edge, coverage) VALUES (?, ?, 1, ?)",
@@ -955,6 +1045,7 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
             active_phase = ("cluster", layer, started)
             fitted_groups = _cluster_groups(rows, layer)
             providers = sorted({str(group.get("provider") or "unknown") for group in fitted_groups})
+            provider_note = ",".join(providers) or ("no-input" if not rows else "no-clusters")
             _finish_fit_phase(
                 db,
                 run_id,
@@ -962,11 +1053,12 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
                 started,
                 layer=layer,
                 output_count=len(fitted_groups),
-                provider=",".join(providers),
+                provider=provider_note,
             )
             active_phase = None
             started = _start_fit_phase(db, run_id, "assign", layer=layer, input_count=len(fitted_groups))
             active_phase = ("assign", layer, started)
+            label_background = labels.build_background(rows)
             for fitted in fitted_groups:
                 group = fitted["rows"]
                 if layer == "span" and len(group) < FORMATION_SIZES[layer]:
@@ -993,7 +1085,7 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
                     if best_overlap >= 0.5 and best_id:
                         node_id = best_id
                         claimed_previous_ids.add(best_id)
-                title, summary, keywords = _representation(group)
+                title, summary, keywords = _representation(group, label_background)
                 materialized[layer].append(
                     {
                         "id": node_id,
@@ -1048,6 +1140,11 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
         # may keep rendering the previous completed snapshot until this commit.
         active_phase = ("commit_state", "", commit_started)
         with db:
+            # `with db` does not begin a SQLite transaction. Take the writer
+            # lock before observing online assignments so ingestion cannot
+            # publish a new membership between this read and materialization.
+            db.execute("BEGIN IMMEDIATE")
+            _carry_forward_online_members(db, run, materialized)
             committed = state.commit_fit_run(
                 db,
                 run_id,
@@ -1056,6 +1153,12 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
             )
             for layer in layers:
                 active_phase = ("materialize", layer, materialize_started[layer])
+                if (run["kind"] == "routine" and layer != "span" and not materialized[layer]
+                        and _effective_layer_nodes(db, run, layer, {})):
+                    # An empty upper input is not authority to delete its
+                    # live published parents (for example an upper-only
+                    # retry). Parents with no live evidence can be removed.
+                    continue
                 generation = db.execute(
                     "SELECT id FROM cluster_generations WHERE fit_run_id = ? AND layer = ?",
                     (run_id, layer),
@@ -1071,6 +1174,7 @@ def _run_fit_locked(db: sqlite3.Connection, run_id: str) -> dict[str, Any]:
                     manage_transaction=False,
                 )
             active_phase = ("rebuild_edges", "", edges_started)
+            _ensure_upper_ancestry(db, run)
             _rebuild_edges(db, run["project_id"], manage_transaction=False)
             edge_count = db.execute(
                 """SELECT COUNT(*) FROM semantic_edges
@@ -1907,6 +2011,7 @@ def search_project_nodes(
 
 
 EXPLORER_BROWSE_MESSAGE_LIMIT = 36
+EXPLORER_MAX_MESSAGE_LIMIT = 100
 
 
 EXPLORER_LAYER_KEYS = {
@@ -2009,39 +2114,62 @@ def _visible_topic_title(
     return _source_preview_title(str(chunks[min(member_ids)]["preview"]))
 
 
-def _recent_explorer_hits(
+def _explorer_message_options(
+    limit: int, message_offset: int, message_limit: int | None,
+) -> tuple[int, int]:
+    if isinstance(message_offset, bool) or not isinstance(message_offset, int) or message_offset < 0:
+        raise ValueError("message_offset must be a nonnegative integer")
+    if message_limit is None:
+        message_limit = max(1, min(int(limit), EXPLORER_BROWSE_MESSAGE_LIMIT))
+    if isinstance(message_limit, bool) or not isinstance(message_limit, int) or message_limit < 1:
+        raise ValueError("message_limit must be a positive integer")
+    return message_offset, min(message_limit, EXPLORER_MAX_MESSAGE_LIMIT)
+
+
+def _explorer_message_page(
     db: sqlite3.Connection,
     project_id: str,
     chunks: Mapping[str, Mapping[str, Any]],
     node_chunks: Mapping[str, set[str]],
     browse_nodes: Sequence[str],
     browse_message: str | None,
+    offset: int,
     limit: int,
-) -> list[dict[str, Any]]:
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     if len(browse_nodes) > len(EXPLORER_LAYER_KEYS) or any(node not in node_chunks for node in browse_nodes):
-        return []
-    if browse_nodes:
+        eligible = set()
+    elif browse_nodes:
         smallest, *others = sorted((node_chunks[node] for node in browse_nodes), key=len)
         eligible = {chunk_id for chunk_id in smallest if all(chunk_id in group for group in others)}
     else:
         eligible = chunks.keys()
-    ids = heapq.nlargest(limit, eligible, key=lambda chunk_id: chunks[chunk_id]["seq"])
+    total = len(eligible)
+    # A deleted tail must not leave a previously valid client page stranded.
+    # Keep in-range offsets intact, including a partial final page.
+    if offset >= total:
+        offset = max(total - limit, 0)
+    page = {
+        "offset": offset, "limit": limit, "total": total,
+        "hasNext": offset + limit < total, "hasPrevious": offset > 0,
+    }
+    ordered = sorted(eligible, key=lambda chunk_id: (chunks[chunk_id]["seq"], chunk_id), reverse=True)
+    ids = ordered[offset:offset + limit]
     if browse_message and browse_message.startswith("message:"):
         anchor = browse_message.removeprefix("message:")
         if anchor in eligible and anchor not in ids:
             ids = [*ids[:limit - 1], anchor]
     if not ids:
-        return []
+        return [], page
 
-    # Fetch the body previews only for the selected sample, within the same
+    # Fetch the body previews only for the bounded page, within the same
     # snapshot as the allowed messages and their primary memberships.
     placeholders = ",".join("?" for _ in ids)
     return [dict(row) for row in db.execute(
         f"""SELECT id, substr(text, 1, 1200) AS text, source_message_ids, created_at
             FROM turn_chunks WHERE project_id=? AND evicted=0 AND id IN ({placeholders})
-            ORDER BY seq DESC""",
+            ORDER BY seq DESC, id DESC""",
         (project_id, *ids),
-    )]
+    )], page
 
 
 def project_explorer_payload(
@@ -2052,15 +2180,21 @@ def project_explorer_payload(
     project_scope: Mapping[str, Any] | None = None,
     browse_nodes: Sequence[str] = (),
     browse_message: str | None = None,
+    message_offset: int = 0,
+    message_limit: int | None = None,
 ) -> dict[str, Any]:
-    """Project matching evidence, or browse active topics and recent messages.
+    """Project matching evidence, or browse active topics and paged messages.
 
-    Search uses the same ranking as grounded recall. Browsing samples recent
+    Search uses the same ranking as grounded recall. Browsing pages live
     messages within the selected topics and retains the full topic hierarchy.
     Both modes read the index without writing questions or browse filters.
     """
 
     query = query.strip()
+    message_offset, page_limit = _explorer_message_options(limit, message_offset, message_limit)
+    message_page = None if query else {
+        "offset": 0, "limit": page_limit, "total": 0, "hasNext": False, "hasPrevious": False,
+    }
     empty_layers = {key: [] for key in (*EXPLORER_LAYER_KEYS.values(), "specific_message")}
     allowed = None if project_scope is None or project_scope.get("includeNewChats", True) else project_scope.get("includedChatIds", [])
     excluded = (
@@ -2076,7 +2210,10 @@ def project_explorer_payload(
     project = db.execute("SELECT id, cwd, updated_at FROM projects WHERE id=?", (project_id,)).fetchone()
     if not project:
         db.close()
-        return {"query": query, "project": None, "layers": empty_layers, "edges": [], "counts": {key: 0 for key in empty_layers}}
+        return {
+            "query": query, "project": None, "layers": empty_layers, "edges": [],
+            "counts": {key: 0 for key in empty_layers}, "messagePage": message_page,
+        }
 
     db.execute("BEGIN")
     chunks, assignments, primary_parent, node_chunks = _explorer_evidence(db, project_id, project_scope)
@@ -2084,9 +2221,9 @@ def project_explorer_payload(
         # A disconnect can land between retrieval and projection.
         hits = [hit for hit in hits if hit["id"] in chunks]
     else:
-        hits = _recent_explorer_hits(
+        hits, message_page = _explorer_message_page(
             db, project_id, chunks, node_chunks, browse_nodes, browse_message,
-            max(1, min(int(limit), EXPLORER_BROWSE_MESSAGE_LIMIT)),
+            message_offset, page_limit,
         )
     hit_spans = {hit["id"]: assignments[hit["id"]] for hit in hits if hit["id"] in assignments}
     descendant_hit_scores: dict[str, float] = {}
@@ -2168,6 +2305,7 @@ def project_explorer_payload(
         "layers": layers,
         "edges": edges,
         "counts": {key: len(value) for key, value in layers.items()},
+        "messagePage": message_page,
     }
     db.close()
     return result

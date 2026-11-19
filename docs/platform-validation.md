@@ -2,6 +2,8 @@
 
 Context Saver 0.1.20 passed native validation with Codex and Claude Code on Linux, Windows and macOS. Each runner installs the actual host packages, uses synthetic chats in temporary projects, and stores its index and host settings in disposable directories. The completed runs and exact scopes are recorded below. [Validation workflow](../.github/workflows/platform-validation.yml)
 
+This page records the completed native matrix before the browse, hierarchy, and direct-density follow-up. That follow-up has separate [changes and focused verification](browse-hierarchy-repair.md). Its updated runtime needs its own native release validation.
+
 ## Environments
 
 | Runner image | Recorded native model environment | Architecture |
@@ -10,7 +12,9 @@ Context Saver 0.1.20 passed native validation with Codex and Claude Code on Linu
 | `windows-2025` | Windows Server 2025, build `10.0.26100` | AMD64 |
 | `macos-15` | macOS 15.8.2 in CI; macOS 26.5.1 in the local isolated recheck | arm64 |
 
-The workflow installs Codex CLI **0.157.1**, Claude Code **2.1.312**, Python **3.12**, Node.js **22**, uv **0.9.5**, FastEmbed **0.9.1**, USearch **2.26.6**, and Playwright **1.56.0** with Chromium. Recorded embedding diagnostics used ONNX Runtime **1.32.0**, NumPy **2.5.5**, and tokenizers **0.23.3**. Windows terminal interaction uses pywinpty **3.0.2**. Model conversion tests additionally install ONNX **1.23.2** as an authoring dependency.
+The recorded runs installed Codex CLI **0.157.1**, Claude Code **2.1.312**, Python **3.12**, Node.js **22**, uv **0.9.5**, FastEmbed **0.9.1**, USearch **2.26.6**, and Playwright **1.56.0** with Chromium. Recorded embedding diagnostics used ONNX Runtime **1.32.0**, NumPy **2.5.5**, and tokenizers **0.23.3**. Windows terminal interaction uses pywinpty **3.0.2**. Model conversion tests additionally install ONNX **1.23.2** as an authoring dependency.
+
+The current workflow additionally installs **umap-learn 0.5.12** and **hdbscan 0.8.44** for direct topic clustering. USearch remains the retrieval index. Use the current [server requirements](../plugins/thread-tree/server/requirements.txt) when reproducing the updated runtime.
 
 Windows checks run against native Windows processes, including `cmd.exe`, PowerShell, native Python and the installed host entrypoints. Terminal tests use ConPTY through pywinpty. Linux and macOS terminal tests use POSIX pseudo-terminals. The recorded Windows runner uses the Git environment supplied by the runner image.
 
@@ -68,4 +72,4 @@ From the repository root, the corresponding harness entrypoints are `python test
 
 The [full native run](https://github.com/ajorge2/context-saver/actions/runs/44379421386) records 174 Python cases, five JavaScript cases, 31 browser scenarios, model diagnostics and native installation on each platform. Linux and macOS completed their trust and upgrade checks in that run. Windows completed its core suites and Claude trust; the Codex terminal driver needed separate argument and shutdown corrections. The [follow-up](https://github.com/ajorge2/context-saver/actions/runs/44381355224) passed 175 Python cases on Linux and Windows, and Linux repeated native trust successfully. Its redundant queued macOS job was cancelled after a local isolated macOS recheck passed 175 cases and both hosts’ native checks. The [final Windows run](https://github.com/ajorge2/context-saver/actions/runs/44382304441) passed all four driver regressions, both installed hosts, Claude workspace trust, and the full Codex trust and upgrade sequence. The final graceful Codex shutdown sequence also passed locally on macOS.
 
-The focused workflow modes deliberately skip unchanged browser and model lanes. No production runtime, model or viewer file changed after the full three-platform run. Published documentation records the combined evidence; the final Windows workflow completed successfully.
+The historical focused workflow modes skipped unchanged browser and model lanes and completed the terminal-driver follow-up. Those recorded results apply to that release snapshot. The later browse, hierarchy, and density changes have the separate verification scope linked above.

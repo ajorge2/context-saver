@@ -104,3 +104,52 @@ test("CN-E2E-01: a real disconnect survives a failed worker launch, reload, and 
     }
   }, ["--fail-first-refresh"]);
 });
+
+test("EX-E2E-02: blank browse reaches every SQLite message beyond search's 80-result cap", async ({ page }) => {
+  await usingViewer(async (info) => {
+    const expected = info.browseMessageIds;
+    expect(expected.length).toBeGreaterThan(100);
+    const initial = await page.request.get(`${info.origin}/api/explore`, { params: { q: "", thread_id: info.selectedProject } });
+    const initialData = await initial.json();
+    expect(initialData.layers.specific_message).toHaveLength(36);
+    expect(initialData.messagePage.total).toBe(expected.length);
+    await page.goto(info.origin);
+    await page.getByRole("combobox", { name: "Select project" }).click();
+    await page.getByRole("option", { name: "Selected fixture" }).click();
+    await page.getByRole("button", { name: "Go to Specific Messages" }).click();
+    const messages = page.locator('[data-section="4"]');
+    const pager = messages.getByRole("navigation", { name: "specific messages pages" });
+    const status = pager.locator(".feature-pagination__status");
+    await expect(status).toHaveText(`1–9 of ${expected.length}`);
+    const seen = [];
+    for (let offset = 0; offset < expected.length; offset += 9) {
+      await expect(status).toHaveText(`${offset + 1}–${Math.min(offset + 9, expected.length)} of ${expected.length}`);
+      const ids = await messages.locator(".feature-card").evaluateAll((cards) => cards.map((card) => card.dataset.nodeId));
+      expect(ids).toEqual(expected.slice(offset, offset + 9));
+      seen.push(...ids);
+      if (offset + 9 < expected.length) await pager.getByRole("button", { name: "Next", exact: true }).click();
+    }
+    expect(new Set(seen).size).toBe(expected.length);
+    expect(seen.at(-1)).toBe(expected.at(-1));
+    await expect(pager.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+    await pager.getByRole("button", { name: "Previous", exact: true }).click();
+    const previousOffset = Math.floor((expected.length - 1) / 9) * 9 - 9;
+    await expect(status).toHaveText(`${previousOffset + 1}–${previousOffset + 9} of ${expected.length}`);
+    await expect(messages.locator(".feature-card").first()).toHaveAttribute("data-node-id", expected[previousOffset]);
+
+    await page.getByRole("button", { name: "Go to Welcome" }).click();
+    const search = page.getByRole("searchbox", { name: "Search Context in Selected fixture" });
+    await search.fill("optimization");
+    await search.press("Enter");
+    await expect(page.getByRole("button", { name: "View results" })).toBeEnabled();
+    await expect(status).toHaveText("1–9 of 80");
+    const searchResponse = await page.request.get(`${info.origin}/api/explore`, { params: { q: "optimization", thread_id: info.selectedProject } });
+    const searchData = await searchResponse.json();
+    expect(searchData.layers.specific_message).toHaveLength(80);
+    expect(searchData.layers.specific_message.every((message) => seen.includes(message.id))).toBe(true);
+    await search.fill("");
+    await expect(status).toHaveText(`1–9 of ${expected.length}`);
+    await expect(messages.locator(".feature-card").first()).toHaveAttribute("data-node-id", expected[0]);
+    expect((await run(python, [fixture, "--snapshot", info.db])).stdout.trim()).toBe(info.digest);
+  }, ["--large-browse"]);
+});

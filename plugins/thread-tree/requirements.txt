@@ -1,6 +1,7 @@
-# The SQLite pipeline remains usable without optional clustering packages.
-# FastEmbed and USearch are the pinned local production retrieval runtime.
+# FTS remains usable without a local semantic runtime. Semantic fits require
+# the pinned UMAP/HDBSCAN runtime and reuse FastEmbed's existing vectors.
 fastembed==0.9.1
 usearch==2.26.6
+umap-learn==0.5.12
+hdbscan==0.8.44
 moss
-bertopic>=0.17.4,<1

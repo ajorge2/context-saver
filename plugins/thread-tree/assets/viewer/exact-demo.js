@@ -467,6 +467,7 @@ const contextExplorer = (() => {
   const layerSections = new Map(layerSelectors.map((layer, index) => [layer.key, sections[index + 1]]));
   const layerHosts = new Map([...document.querySelectorAll('[data-layer-key]')].map((host) => [host.dataset.layerKey, host]));
   const pageSize = 9;
+  const messageBufferSize = 36;
   const pages = {};
   const lists = new Map();
   const pagers = new Map();
@@ -495,17 +496,35 @@ const contextExplorer = (() => {
       <button type="button" data-card-page="next">Next</button>
     `;
     pager.hidden = true;
-    pager.addEventListener('click', (event) => {
+    pager.addEventListener('click', async (event) => {
       const button = event.target.closest('[data-card-page]');
       if (!button || button.disabled) return;
-      pages[layer.key] = (pages[layer.key] || 0) + (button.dataset.cardPage === 'next' ? 1 : -1);
-      renderLayer(layer.key);
+      const page = (pages[layer.key] || 0) + (button.dataset.cardPage === 'next' ? 1 : -1);
+      pages[layer.key] = page;
       list.scrollTop = 0;
-      (button.disabled ? list : button).focus({ preventScroll: true });
+      const messagePage = browseMessagePage();
+      if (layer.key === 'specific_message' && messagePage
+          && (page * pageSize < messagePage.offset
+            || page * pageSize >= messagePage.offset + payload.layers.specific_message.length)) {
+        list.focus({ preventScroll: true });
+        const loaded = await refreshBrowseMessages(page);
+        if (!loaded || document.activeElement !== list) return;
+      } else {
+        renderLayer(layer.key);
+      }
+      (button.disabled || pager.hidden ? list : button).focus({ preventScroll: true });
     });
     list.after(pager);
     pagers.set(layer.key, pager);
   });
+
+  // Search and older viewer fixtures keep their existing, local pagination.
+  // Browse metadata describes the full message set while the array is one buffer.
+  const browseMessagePage = () => {
+    const page = payload?.messagePage;
+    return browsing && !selected.specific_message && page
+      && Number.isInteger(page.offset) && Number.isInteger(page.total) ? page : null;
+  };
 
   const candidates = (layerKey, excludeOwnSelection = false) => {
     return window.ContextExplorerModel.filterLayerNodes(payload, index, selected, layerKey, excludeOwnSelection);
@@ -556,7 +575,7 @@ const contextExplorer = (() => {
         list.innerHTML = '<div class="feature-empty" role="status"><strong>Loading messages…</strong></div>';
       } else {
         list.innerHTML = '<div class="feature-empty"><strong>Couldn’t load messages</strong><button type="button" class="feature-retry" data-retry-messages>Try again</button></div>';
-        list.querySelector('[data-retry-messages]').addEventListener('click', refreshBrowseMessages);
+        list.querySelector('[data-retry-messages]').addEventListener('click', () => refreshBrowseMessages(pages.specific_message || 0));
       }
       return;
     }
@@ -572,18 +591,21 @@ const contextExplorer = (() => {
       }
       return;
     }
-    const totalPages = Math.ceil(nodes.length / pageSize);
-    const page = Math.min(pages[layerKey] || 0, totalPages - 1);
+    const messagePage = layerKey === 'specific_message' ? browseMessagePage() : null;
+    const total = messagePage ? messagePage.total : nodes.length;
+    const totalPages = Math.ceil(total / pageSize);
+    const page = Math.max(0, Math.min(pages[layerKey] || 0, totalPages - 1));
     pages[layerKey] = page;
     const first = page * pageSize;
-    const last = Math.min(first + pageSize, nodes.length);
+    const last = Math.min(first + pageSize, total);
+    const bufferFirst = first - (messagePage?.offset || 0);
     if (totalPages > 1) {
       pager.hidden = false;
       pager.querySelector('[data-card-page="previous"]').disabled = page === 0;
       pager.querySelector('[data-card-page="next"]').disabled = page === totalPages - 1;
-      pager.querySelector('.feature-pagination__status').textContent = `${first + 1}–${last} of ${nodes.length}`;
+      pager.querySelector('.feature-pagination__status').textContent = `${first + 1}–${last} of ${total}`;
     }
-    list.innerHTML = nodes.slice(first, last).map((node) => {
+    list.innerHTML = nodes.slice(bufferFirst, bufferFirst + last - first).map((node) => {
       const isSelected = selected[layerKey] === node.id;
       return `
         <article class="feature-card${isSelected ? " is-selected" : ""}" data-node-id="${escapeHtml(node.id)}">
@@ -621,27 +643,36 @@ const contextExplorer = (() => {
     activeMessageRequest = null;
   };
 
-  async function refreshBrowseMessages() {
+  async function refreshBrowseMessages(requestedPage = 0) {
     cancelMessageRequest();
+    pages.specific_message = requestedPage;
     const request = new AbortController();
     activeMessageRequest = request;
-    const params = new URLSearchParams({ q: '', thread_id: selectedProjectValue });
+    const params = new URLSearchParams({
+      q: '', thread_id: selectedProjectValue,
+      message_offset: String(Math.floor(requestedPage * pageSize / messageBufferSize) * messageBufferSize),
+      message_limit: String(messageBufferSize),
+    });
     for (const layer of layerSelectors.slice(0, -1)) {
       if (selected[layer.key]) params.append('browse_node', selected[layer.key]);
     }
     if (selected.specific_message) params.set('browse_message', selected.specific_message);
     messageStatus = 'loading';
+    const list = lists.get('specific_message');
+    if (list.contains(document.activeElement)) list.focus({ preventScroll: true });
     renderMessages();
     try {
       const response = await fetch(`/api/explore?${params}`, { cache: 'no-store', signal: request.signal });
       if (!response.ok) throw new Error('Messages are unavailable.');
       const nextPayload = await response.json();
-      if (request.signal.aborted) return;
+      if (request.signal.aborted) return false;
       load(nextPayload, true, true);
+      return true;
     } catch (_error) {
-      if (request.signal.aborted) return;
+      if (request.signal.aborted) return false;
       messageStatus = 'error';
       renderMessages();
+      return false;
     } finally {
       if (activeMessageRequest === request) activeMessageRequest = null;
     }
@@ -658,6 +689,8 @@ const contextExplorer = (() => {
     if (nodeId && !byId.has(nodeId)) return;
     const value = nodeId || '';
     if (value === (selected[layerKey] || '')) return;
+    cancelMessageRequest();
+    messageStatus = '';
     selected = { ...selected, [layerKey]: value };
     resetPages();
     if (browsing && !activeRequest && (layerKey !== 'specific_message' || !value)) void refreshBrowseMessages();
@@ -689,6 +722,8 @@ const contextExplorer = (() => {
     if (activeMessageRequest) {
       cancelMessageRequest();
       messageStatus = '';
+      const messagePage = browseMessagePage();
+      if (messagePage) pages.specific_message = Math.ceil(messagePage.offset / pageSize);
       renderMessages();
     }
     const request = new AbortController();

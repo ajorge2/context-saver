@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from _support import PACKAGE_ROOT, SCRIPTS_ROOT
 
+import importlib.util
 import json
 import os
 import tempfile
@@ -902,29 +903,38 @@ class ThreadTreePipelineTests(unittest.TestCase):
         self.assertIn("PreCompact", hooks["hooks"])
         self.assertTrue((root / "skills" / "context-saver" / "SKILL.md").is_file())
 
-    def test_large_embedded_fit_uses_bounded_usearch_fallback(self) -> None:
-        try:
-            import usearch  # noqa: F401
-        except ImportError:
-            self.skipTest("USearch runtime is not installed")
+    def test_large_embedded_fit_uses_density_runtime_without_centroid_fallback(self) -> None:
+        missing = [name for name in ("numpy", "umap", "hdbscan") if importlib.util.find_spec(name) is None]
+        if missing:
+            if os.environ.get("CONTEXT_SAVER_REQUIRE_NATIVE_MODEL"):
+                self.fail(f"Native clustering release runtime missing: {missing}")
+            self.skipTest(f"Pinned native clustering runtime not installed: {missing}")
+        import numpy as np
+
+        rng = np.random.default_rng(12846)
         rows = []
-        for index in range(1_200):
-            topic = index % 24
-            vector = [0.0] * 32
-            vector[topic] = 1.0
-            vector[(topic + 1) % 32] = (index % 7) * 0.002
-            rows.append(
-                {
-                    "id": f"large-{index}",
-                    "text": f"topic {topic} evidence {index}",
-                    "embedding": pipeline._normalize(vector),
-                }
-            )
-        groups = pipeline._cluster_groups(rows, "span")
-        self.assertTrue(groups)
-        self.assertEqual(sum(len(group["rows"]) for group in groups), len(rows))
-        self.assertEqual({group["provider"] for group in groups}, {"usearch-centroid-fallback"})
-        self.assertLessEqual(len(groups), 512)
+        for family in range(3):
+            vectors = rng.normal(0, .025, (400, 16)) + np.eye(16)[family]
+            for index, vector in enumerate(vectors):
+                rows.append({
+                    "id": f"large-{family}-{index}",
+                    "text": f"Synthetic family {family} evidence {index}",
+                    "embedding": vector.tolist(),
+                    "fixture_family": family,
+                })
+        # Exercise the production route and real UMAP/HDBSCAN, while rejecting
+        # any regression to the old forced-count centroid/component routes.
+        with patch.object(pipeline, "_deterministic_cluster_groups", side_effect=AssertionError("no fallback")):
+            groups = pipeline._cluster_groups(rows, "span")
+        self.assertEqual({group["provider"] for group in groups}, {"umap+hdbscan"})
+        self.assertEqual(len(groups), 3)
+        self.assertEqual(sorted(len(group["rows"]) for group in groups), [400, 400, 400])
+        assigned = [row for group in groups for row in group["rows"]]
+        assigned_ids = {row["id"] for row in assigned}
+        self.assertEqual(len(assigned_ids), len(assigned))
+        self.assertEqual(assigned_ids, {row["id"] for row in rows})
+        for group in groups:
+            self.assertEqual(len({row["fixture_family"] for row in group["rows"]}), 1)
 
     def test_deterministic_fallback_computes_group_persistence_once(self) -> None:
         rows = [
@@ -942,7 +952,7 @@ class ThreadTreePipelineTests(unittest.TestCase):
         pipeline._guard_deterministic_fallback_size(
             pipeline.DETERMINISTIC_FALLBACK_MAX_ROWS
         )
-        with self.assertRaisesRegex(RuntimeError, "Scalable clustering runtime"):
+        with self.assertRaisesRegex(RuntimeError, "Lexical-only clustering"):
             pipeline._guard_deterministic_fallback_size(
                 pipeline.DETERMINISTIC_FALLBACK_MAX_ROWS + 1
             )

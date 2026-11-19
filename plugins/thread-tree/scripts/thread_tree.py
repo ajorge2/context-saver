@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from thread_tree_state import exclusive_process_lock, initialize_state_schema
-from thread_tree_runtime import PYTHON_VERSION, detached_process_options
+from thread_tree_runtime import PYTHON_VERSION, SEMANTIC_REQUIREMENTS, detached_process_options
 import thread_tree_scope as scope
 import thread_tree_vector_index as vector_index
 
@@ -54,7 +54,7 @@ FASTEMBED_MODEL_NAME = "ibm-granite/granite-embedding-small-english-r2"
 FASTEMBED_MODEL_VERSION = "granite-small-english-r2-u8u8-pc-v2"
 FASTEMBED_MODEL_SHA256 = "0a65b9f383a5da3833a7ecb16778bf27e04373f45a3af1c5919a4b87f51a4422"
 FASTEMBED_DIMENSION = 384
-PLUGIN_VERSION = "0.1.20"
+PLUGIN_VERSION = "0.1.21"
 DEFAULT_DATA_DIR = Path.home() / ".local" / "share" / "thread-tree"
 LEGACY_CODEX_DATA_DIR = Path.home() / ".codex" / "thread-history-tree"
 DEFAULT_CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser()
@@ -1501,6 +1501,8 @@ def explorer_payload(
     enforce_scope: bool = False,
     browse_nodes: Sequence[str] = (),
     browse_message: str | None = None,
+    message_offset: int = 0,
+    message_limit: int | None = None,
 ) -> dict[str, Any]:
     if not thread_id:
         return {"query": query.strip(), "project": None, "layers": {}, "edges": [], "counts": {}}
@@ -1515,6 +1517,7 @@ def explorer_payload(
             return {"query": query.strip(), "project": None, "layers": {}, "edges": [], "counts": {}}
     return pipeline_module().project_explorer_payload(
         thread_id, query, project_scope=selected, browse_nodes=browse_nodes, browse_message=browse_message,
+        message_offset=message_offset, message_limit=message_limit,
     )
 
 
@@ -1952,9 +1955,9 @@ def connections_payload() -> dict[str, Any]:
 
 
 def _connection_rebuild_command(worker: Path, job_id: str, project_ids: list[str]) -> list[str]:
-    has_scalable_runtime = bool(
-        importlib.util.find_spec("numpy")
-        and importlib.util.find_spec("usearch")
+    has_scalable_runtime = all(
+        importlib.util.find_spec(module) is not None
+        for module in ("numpy", "fastembed", "usearch", "umap", "hdbscan")
     )
     uv = shutil.which("uv")
     if has_scalable_runtime or not uv:
@@ -1969,8 +1972,7 @@ def _connection_rebuild_command(worker: Path, job_id: str, project_ids: list[str
             "--no-project",
             "--python",
             PYTHON_VERSION,
-            "--with",
-            "usearch==2.26.6",
+            *(argument for requirement in SEMANTIC_REQUIREMENTS for argument in ("--with", requirement)),
             "python",
             str(worker),
             job_id,
@@ -2383,9 +2385,26 @@ class ViewerHandler(BaseHTTPRequestHandler):
             return self.send_json(search_nodes(query, thread_id, enforce_scope=True) if query.strip() else [])
         if parsed.path == "/api/explore":
             query = params.get("q", [""])[0]
+            page_params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
+            page_options = {}
+            for name, minimum in (("message_offset", 0), ("message_limit", 1)):
+                if name not in page_params:
+                    continue
+                values = page_params[name]
+                try:
+                    if len(values) != 1 or not re.fullmatch(r"[0-9]+", values[0]):
+                        raise ValueError
+                    value = int(values[0])
+                    if value < minimum:
+                        raise ValueError
+                except ValueError:
+                    kind = "nonnegative" if minimum == 0 else "positive"
+                    return self.send_json({"error": f"{name} must be a {kind} integer"}, 400)
+                page_options[name] = value
             result = explorer_payload(
                 query, thread_id, enforce_scope=True,
                 browse_nodes=params.get("browse_node", []), browse_message=params.get("browse_message", [None])[0],
+                **page_options,
             )
             return self.send_json(result, 200 if result["project"] else 404)
         if parsed.path.startswith("/api/node/"):
@@ -2534,6 +2553,66 @@ def print_output(value: Any, as_json: bool) -> None:
         print(value)
 
 
+def refresh_topics(project_path: Path, *, operation_id: str | None = None) -> dict[str, Any]:
+    """Explicitly refresh one permitted project's derived topic hierarchy."""
+
+    project_path = project_path.expanduser().resolve()
+    if not project_path.is_dir():
+        raise ValueError("The project folder does not exist.")
+    operation_id = operation_id.strip() if operation_id is not None else f"refresh_{uuid.uuid4().hex}"
+    if not operation_id:
+        raise ValueError("The operation ID must not be empty.")
+    with closing(connect_db()) as db:
+        project = next((row for row in db.execute("SELECT id, cwd, updated_at FROM projects")
+                        if row["cwd"] and Path(row["cwd"]).expanduser().resolve() == project_path), None)
+        if project is None:
+            raise ValueError("The project has no indexed Context Saver history.")
+
+        def check_permission() -> None:
+            config = load_scope_config()
+            selected = scope.selected_project(config, str(project_path))
+            if not config.get("configured") or selected is None:
+                raise ValueError("The project is not selected in Context Saver connections.")
+            if selected.get("disconnectPending") or selected.get("pendingDisconnectChatIds"):
+                raise ValueError("Finish the pending connection changes before refreshing topics.")
+            chats = [row[0] for row in db.execute(
+                "SELECT DISTINCT thread_id FROM turn_chunks WHERE project_id=? AND evicted=0", (project["id"],),
+            )]
+            if any(not scope.chat_is_selected(selected, chat) for chat in chats):
+                raise ValueError("The project retains chats outside its selected connections; update connections before refreshing topics.")
+            representative_chat = next(iter(chats), next((chat for chat in selected.get("includedChatIds", [])
+                                                           if scope.chat_is_selected(selected, chat)), None))
+            decision = scope.scope_decision(config, str(project_path), representative_chat, last_activity_at=project["updated_at"])
+            if not decision["active"]:
+                raise ValueError("The project is paused or has no permitted chats; resume its connections before refreshing topics.")
+
+        # Scope checks are brief. The tested rebuild API owns project locking;
+        # expensive fitting must not prevent another process revoking consent.
+        with scope_mutation_lock():
+            check_permission()
+        pipeline = pipeline_module()
+        try:
+            fit = pipeline.rebuild_project(db, project["id"], reason="explicit topic refresh", operation_id=operation_id)
+        except Exception as error:
+            raise RuntimeError("Context Saver topics could not be refreshed.") from error
+        with scope_mutation_lock():
+            check_permission()
+            chunks = db.execute(
+                "SELECT thread_id, source_message_ids FROM turn_chunks WHERE project_id=? AND evicted=0", (project["id"],),
+            ).fetchall()
+            message_count, chat_count = pipeline._evidence_counts(chunks)
+            counts = {layer: 0 for layer in ("span", "specific", "broad")}
+            counts.update({row["layer"]: row["total"] for row in db.execute(
+                "SELECT layer, COUNT(*) AS total FROM semantic_nodes WHERE project_id=? AND lifecycle!='retired' GROUP BY layer",
+                (project["id"],),
+            )})
+        return {
+            "ok": True, "project": {"id": project["id"], "path": str(project_path)},
+            "operationId": operation_id, "fitState": fit["state"], "fitRunId": fit["id"],
+            "counts": {"chunks": len(chunks), "messages": message_count if chunks else 0, "chats": chat_count, **counts},
+        }
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Semantic tree for Codex thread history")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -2571,6 +2650,11 @@ def build_parser() -> argparse.ArgumentParser:
     worker_parser.add_argument("--project-id")
     worker_parser.add_argument("--max-turns", type=int)
     worker_parser.add_argument("--json", action="store_true")
+
+    refresh_parser = commands.add_parser("refresh-topics", help="Refresh one project's derived topics without changing saved messages")
+    refresh_parser.add_argument("--project", type=Path, required=True)
+    refresh_parser.add_argument("--operation-id")
+    refresh_parser.add_argument("--json", action="store_true")
 
     serve_parser = commands.add_parser("serve", help="Serve the local tree viewer")
     serve_parser.add_argument("--host", default="127.0.0.1")
@@ -2621,6 +2705,17 @@ def main(argv: list[str] | None = None) -> int:
             result = pipeline_module().process_project(args.project_id, max_turns=args.max_turns)
         else:
             result = pipeline_module().process_all_pending(max_turns_per_project=args.max_turns)
+        print_output(result, args.json)
+        return 0
+    if args.command == "refresh-topics":
+        try:
+            result = refresh_topics(args.project, operation_id=args.operation_id)
+        except ValueError as error:
+            print_output({"ok": False, "error": str(error)}, args.json)
+            return 2
+        except Exception:
+            print_output({"ok": False, "error": "Context Saver topics could not be refreshed."}, args.json)
+            return 1
         print_output(result, args.json)
         return 0
     if args.command == "serve":

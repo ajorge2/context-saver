@@ -12,6 +12,11 @@ from pathlib import Path
 
 FASTEMBED_REQUIREMENT = "fastembed==0.9.1"
 USEARCH_REQUIREMENT = "usearch==2.26.6"
+UMAP_REQUIREMENT = "umap-learn==0.5.12"
+HDBSCAN_REQUIREMENT = "hdbscan==0.8.44"
+SEMANTIC_REQUIREMENTS = (
+    FASTEMBED_REQUIREMENT, USEARCH_REQUIREMENT, UMAP_REQUIREMENT, HDBSCAN_REQUIREMENT,
+)
 PYTHON_VERSION = "3.12"
 
 
@@ -36,10 +41,7 @@ def worker_command(worker: Path, project_id: str) -> list[str]:
             "--no-project",
             "--python",
             PYTHON_VERSION,
-            "--with",
-            FASTEMBED_REQUIREMENT,
-            "--with",
-            USEARCH_REQUIREMENT,
+            *(argument for requirement in SEMANTIC_REQUIREMENTS for argument in ("--with", requirement)),
             "python",
             str(worker),
             "--project-id",

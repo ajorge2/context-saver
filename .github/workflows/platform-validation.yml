@@ -37,7 +37,7 @@ jobs:
         with:
           version: "0.9.5"
       - name: Install local model runtime
-        run: uv pip install --system fastembed==0.9.1 usearch==2.26.6
+        run: uv pip install --system fastembed==0.9.1 usearch==2.26.6 umap-learn==0.5.12 hdbscan==0.8.44
       - name: Compare exact and indexed retrieval
         timeout-minutes: 5
         run: python tests/embedding_diagnostics.py
@@ -77,7 +77,7 @@ jobs:
         with:
           version: "0.9.5"
       - name: Install pinned test runtime
-        run: uv pip install --system mcp==1.26.0 fastembed==0.9.1 usearch==2.26.6 onnx==1.23.2
+        run: uv pip install --system mcp==1.26.0 fastembed==0.9.1 usearch==2.26.6 umap-learn==0.5.12 hdbscan==0.8.44 onnx==1.23.2
       - name: Install native coding hosts
         run: npm install --global @openai/codex@0.157.1 @anthropic-ai/claude-code@2.1.312
       - name: Install Windows terminal adapter

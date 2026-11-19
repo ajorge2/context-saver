@@ -49,6 +49,23 @@ class ThreadTreeStateMachineTests(unittest.TestCase):
         claimed = state.claim_next_turn(self.db, self.project_id)
         self.assertIsNotNone(claimed)
         self.assertEqual(claimed["id"], turn_id)
+        # These state-machine fixtures declare preaccepted assignments. Give
+        # them real same-project targets and incoming memberships; deferred
+        # references become valid when the production completion inserts the
+        # matching chunks in this same transaction.
+        self.db.execute("PRAGMA defer_foreign_keys=ON")
+        for chunk in chunks:
+            raw = chunk.get("layer_states", {}).get("span")
+            if not isinstance(raw, dict) or not raw.get("target_id"):
+                continue
+            self.db.execute(
+                """INSERT OR IGNORE INTO semantic_nodes
+                   (id, project_id, layer, lifecycle, title, created_at, updated_at)
+                   VALUES (?, ?, 'span', ?, 'Fixture span', ?, ?)""",
+                (raw["target_id"], self.project_id, raw["state"], state.utc_now(), state.utc_now()),
+            )
+            self.db.execute("INSERT OR IGNORE INTO semantic_node_memberships VALUES (?, ?, 1)",
+                            (raw["target_id"], chunk["id"]))
         return state.complete_turn_ingestion(self.db, turn_id, chunks)
 
     def test_one_tree_per_canonical_project_root(self) -> None:

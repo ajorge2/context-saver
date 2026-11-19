@@ -2,13 +2,15 @@
 
 Context Saver is a **Codex and Claude Code plugin for macOS, Linux, and Windows** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
 
-[Install the plugin](#install) · [Open the viewer](#open-the-viewer)
+[Install the plugin](#install) · [Open the viewer](#open-the-viewer) · [Refresh existing topics](#refresh-existing-topics)
 
 <a id="install-on-macos"></a>
 
 ## Install
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/) and make sure your coding client can find it on its PATH. Context Saver uses uv to select Python 3.12 and install its pinned runtime dependencies on first use.
+
+Local embeddings feed UMAP + HDBSCAN directly for topic grouping. FastEmbed computes the embeddings, and USearch indexes them for retrieval. The [server requirements](plugins/thread-tree/server/requirements.txt) pin the runtime used by the plugin and manual commands.
 
 Copy the commands for your client into a terminal.
 
@@ -34,7 +36,7 @@ Start a new Claude Code session in your project and run `/thread-tree:context-sa
 - **Codex** — Attach **Context Saver** to a chat and send **Open Context Saver**.
 - **Claude Code** — Run `/thread-tree:context-saver Open Context Saver` in your project.
 
-The viewer opens in your browser. Select a project to browse its subjects, broad topics, specific topics, and messages, or enter a search. Click a card to inspect the source material. Use **Connections** to pause a chat or remove its saved context.
+The viewer opens in your browser. Select a project to browse its subjects, broad topics, specific topics, and messages, or enter a search. Message pages continue through the selected history. Click a card to inspect the source material. Use **Connections** to pause a chat or remove its saved context.
 
 ![Context Saver viewer showing a grid of specific topics from a sample project](docs/viewer.png)
 
@@ -44,12 +46,18 @@ The viewer opens in your browser. Select a project to browse its subjects, broad
 ```sh
 git clone https://github.com/ajorge2/context-saver.git
 cd context-saver
-uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 python -X utf8 plugins/thread-tree/scripts/thread_tree.py serve --port 0 --open
+uv run --no-project --python 3.12 --with-requirements plugins/thread-tree/server/requirements.txt python -X utf8 plugins/thread-tree/scripts/thread_tree.py serve --port 0 --open
 ```
 
 Keep this Terminal window open while you use the viewer.
 
 </details>
+
+## Refresh existing topics
+
+To rebuild an existing project's topic organization, attach Context Saver and ask **Refresh Context Saver topics**. In Claude Code, run `/thread-tree:context-saver Refresh Context Saver topics` from that project.
+
+The refresh preserves saved messages, embeddings, and connection settings. The project must be selected and active. Installing an upgrade or opening the viewer does not refresh every existing tree. Topic counts and labels can change, and some evidence can remain unclustered. See the [repair notes and limitations](docs/browse-hierarchy-repair.md) for the Terminal command and verification scope.
 
 ## Ask for an earlier decision
 
@@ -57,7 +65,7 @@ Once a connected chat has some history, ask the agent a question like **“What 
 
 ## Supported platforms
 
-The [native validation suite](docs/platform-validation.md) runs with Codex CLI 0.157.1 and Claude Code 2.1.312 using fresh profiles, synthetic chats, and local test responses.
+The [recorded native validation matrix](docs/platform-validation.md) used Codex CLI 0.157.1 and Claude Code 2.1.312 with fresh profiles, synthetic chats, and local test responses. The [browse and topic follow-up](docs/browse-hierarchy-repair.md#verification-scope) records its separate focused checks.
 
 | Platform | Validated environment |
 |---|---|

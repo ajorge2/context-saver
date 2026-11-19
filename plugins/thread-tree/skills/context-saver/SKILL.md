@@ -1,6 +1,6 @@
 ---
 name: context-saver
-description: Activate Context Saver for the current chat or open its local viewer to browse saved project context.
+description: Activate Context Saver, open its viewer, or explicitly refresh saved project topics.
 ---
 
 # Context Saver invocation
@@ -37,7 +37,7 @@ viewer, complete the activation above and open the local viewer.
    Use a persistent terminal session and leave the server running.
 
    ```sh
-   uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 python -X utf8 scripts/thread_tree.py serve --host 127.0.0.1 --port 8765 --open
+   uv run --no-project --python 3.12 --with fastembed==0.9.1 --with usearch==2.26.6 --with umap-learn==0.5.12 --with hdbscan==0.8.44 python -X utf8 scripts/thread_tree.py serve --host 127.0.0.1 --port 8765 --open
    ```
 
 4. The command prints the actual URL, including the port when one was
@@ -46,3 +46,31 @@ viewer, complete the activation above and open the local viewer.
    browser automatically, the user can open the link directly. If launch
    fails, explain the error and give the user the command with the verified
    package path for a local terminal.
+
+## Refresh existing topics
+
+When the user asks to **Refresh Context Saver topics**, perform the preparation
+above, then refresh the requested project's existing topic hierarchy. This is
+an explicit maintenance action; opening the viewer or installing an upgrade
+does not authorize a refresh.
+
+1. Locate the installed package from this skill's actual path and verify
+   `scripts/thread_tree.py` and `server/requirements.txt` exist, as described
+   above. Resolve the requested project path; use the current project when
+   the user has not named another project.
+2. Run this command from the verified package root, replacing the example
+   project path with the resolved path:
+
+   ```sh
+   uv run --no-project --python 3.12 --with-requirements server/requirements.txt python -X utf8 scripts/thread_tree.py refresh-topics --project '/absolute/project/path' --json
+   ```
+
+   The requirements pin the same local embedding, UMAP, and HDBSCAN runtime
+   as the server. To retry the same operation, pass the returned
+   `--operation-id`; omit it for a fresh refresh.
+3. Report the returned fit state and topic/message counts. The command changes
+   derived topics while preserving saved messages, vectors, and chat consent.
+   If it reports paused, unselected, or pending connections, explain the
+   reported condition without changing connection settings automatically.
+   Refresh only the requested project; do not refresh every indexed project
+   during an upgrade.

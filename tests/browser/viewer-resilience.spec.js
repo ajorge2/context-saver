@@ -609,3 +609,180 @@ test("MD-RACE-02: a late connection refresh takes focus and invalidates old meta
   expect(state.unexpected).toEqual([]);
   expect(state.pageErrors).toEqual([]);
 });
+
+function pagedMessages(params, count = 130) {
+  const topics = [
+    { id: "subject-a", layer: "subject", title: "Subject A" },
+    { id: "subject-b", layer: "subject", title: "Subject B" },
+    { id: "topic-a", layer: "specific_topic", title: "Topic A" },
+    { id: "topic-b", layer: "specific_topic", title: "Topic B" },
+    { id: "topic-c", layer: "specific_topic", title: "Topic C" },
+  ];
+  const messages = Array.from({ length: count }, (_, index) => ({
+    id: `message:fixture-${index}`, layer: "specific_message", title: `Synthetic message ${index}`,
+    topic: index < 90 ? "topic-a" : index < 120 ? "topic-b" : "topic-c",
+  }));
+  const topicSubjects = { "topic-a": "subject-a", "topic-b": "subject-a", "topic-c": "subject-b" };
+  const query = params.get("q") || "";
+  const filters = params.getAll("browse_node");
+  const eligible = messages.filter((message) => filters.every((id) => id === message.topic || id === topicSubjects[message.topic]));
+  let offset = query ? 0 : Number(params.get("message_offset") || 0);
+  const limit = Number(params.get("message_limit") || 36);
+  if (offset >= eligible.length) offset = Math.max(eligible.length - limit, 0);
+  const visible = query ? messages.slice(0, 80) : eligible.slice(offset, offset + limit);
+  const anchor = messages.find((message) => message.id === params.get("browse_message"));
+  if (anchor && eligible.includes(anchor) && !visible.includes(anchor)) visible.splice(limit - 1, 1, anchor);
+  return {
+    query, project: { id: "alpha" },
+    layers: Object.fromEntries(layerNames.map((layer) => [layer, [...topics, ...visible].filter((node) => node.layer === layer)])),
+    edges: [
+      ...Object.entries(topicSubjects).map(([child_id, parent_id]) => ({ child_id, parent_id })),
+      ...visible.map((message) => ({ child_id: message.id, parent_id: message.topic })),
+    ],
+    messagePage: query ? null : { offset, limit, total: eligible.length, hasNext: offset + limit < eligible.length, hasPrevious: offset > 0 },
+  };
+}
+
+const messageSection = (page) => page.locator('[data-section="4"]');
+const messagePager = (page) => messageSection(page).getByRole("navigation", { name: "specific messages pages" });
+const messagePageStatus = (page) => messagePager(page).locator(".feature-pagination__status");
+
+async function advanceToBufferBoundary(page) {
+  await openSlide(page, "Specific Messages");
+  for (let index = 1; index <= 3; index += 1) {
+    await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+    await expect(messagePageStatus(page)).toHaveText(`${index * 9 + 1}–${index * 9 + 9} of 130`);
+  }
+}
+
+test("EX-PAGE-01: global message pages retain 36 dropdown options and reset for intersecting filters", async ({ page }) => {
+  const offsets = [];
+  const state = await boot(page, { explore: (_entry, request) => {
+    const params = new URL(request.url()).searchParams;
+    offsets.push(Number(params.get("message_offset") || 0));
+    return { json: pagedMessages(params) };
+  } });
+  await chooseProject(page, "Alpha project");
+  await advanceToBufferBoundary(page);
+  expect(offsets).toEqual([0]);
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("37–45 of 130");
+  expect(offsets).toEqual([0, 36]);
+  await expect(messagePager(page).getByRole("button", { name: "Next", exact: true })).toBeFocused();
+  await messagePager(page).getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("28–36 of 130");
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("37–45 of 130");
+  expect(offsets).toEqual([0, 36, 0, 36]);
+  const selector = page.locator('[data-layer-key="specific_message"]');
+  await selector.locator(".combobox-trigger").click();
+  await expect(selector.getByRole("option")).toHaveCount(36);
+  await selector.getByRole("option", { name: "Synthetic message 40", exact: true }).click();
+  await expect(messageSection(page).locator(".feature-card h3")).toHaveText("Synthetic message 40");
+  await expect(messagePager(page)).toBeHidden();
+  await openSlide(page, "Specific Topics");
+  await page.getByRole("button", { name: "Add Topic A filter", exact: true }).click();
+  await expect(messageSection(page).locator(".feature-card h3")).toHaveText("Synthetic message 40");
+  await openSlide(page, "Specific Messages");
+  await selector.getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 90");
+  await expect(messageSection(page).locator(".feature-card h3").first()).toHaveText("Synthetic message 0");
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await openSlide(page, "Subjects");
+  await page.getByRole("button", { name: "Add Subject A filter", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 90");
+  await openSlide(page, "Specific Topics");
+  await page.locator('[data-layer-key="specific_topic"]').getByRole("button", { name: "Clear selection", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 120");
+  await page.getByRole("button", { name: "Add Topic B filter", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 30");
+  await expect(messageSection(page).locator(".feature-card h3").first()).toHaveText("Synthetic message 90");
+  expect(state.pageErrors).toEqual([]);
+});
+
+test("EX-PAGE-02: stale pagination cannot replace newer query results or a new branch", async ({ page }) => {
+  const staleSearch = responseGate();
+  const staleBranch = responseGate();
+  let held = 0;
+  const state = await boot(page, { explore: (_entry, request) => {
+    const params = new URL(request.url()).searchParams;
+    if (params.get("message_offset") === "36" && !params.has("browse_node")) {
+      held += 1;
+      return (held === 1 ? staleSearch : staleBranch).reply(request);
+    }
+    return { json: pagedMessages(params) };
+  } });
+  await chooseProject(page, "Alpha project");
+  await advanceToBufferBoundary(page);
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await staleSearch.arrived;
+  await openSlide(page, "Welcome");
+  await submit(page, "optimization");
+  await expect(heroButton(page)).toHaveAccessibleName("View results");
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 80");
+  await releaseResponse(page, staleSearch, { json: pagedMessages(new URLSearchParams({ message_offset: "36" })) });
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 80");
+  await search(page).fill("");
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 130");
+  await advanceToBufferBoundary(page);
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await staleBranch.arrived;
+  await openSlide(page, "Specific Topics");
+  await page.getByRole("button", { name: "Add Topic C filter", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 10");
+  await releaseResponse(page, staleBranch, { json: pagedMessages(new URLSearchParams({ message_offset: "36" })) });
+  await expect(messagePageStatus(page)).toHaveText("1–9 of 10");
+  await expect(messageSection(page).locator(".feature-card h3").first()).toHaveText("Synthetic message 120");
+  expect(state.pageErrors).toEqual([]);
+});
+
+test("EX-PAGE-03: a failed buffer retries the requested page and clamps a deleted tail", async ({ page }) => {
+  let attempts = 0;
+  const state = await boot(page, { explore: (_entry, request) => {
+    const params = new URL(request.url()).searchParams;
+    if (params.get("message_offset") === "36") {
+      attempts += 1;
+      if (attempts === 1) return { status: 503, json: { error: "Synthetic page failure" } };
+      return { json: pagedMessages(params, 31) };
+    }
+    return { json: pagedMessages(params) };
+  } });
+  await chooseProject(page, "Alpha project");
+  await advanceToBufferBoundary(page);
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(messageSection(page).getByText("Couldn’t load messages")).toBeVisible();
+  await messageSection(page).getByRole("button", { name: "Try again", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("28–31 of 31");
+  await expect(messageSection(page).locator(".feature-list")).toBeFocused();
+  await expect(messageSection(page).locator(".feature-card h3")).toHaveText(["Synthetic message 27", "Synthetic message 28", "Synthetic message 29", "Synthetic message 30"]);
+  await expect(messagePager(page).getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  await messagePager(page).getByRole("button", { name: "Previous", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("19–27 of 31");
+  expect(attempts).toBe(2);
+  expect(state.pageErrors).toEqual([]);
+});
+
+test("EX-PAGE-04: an effective tail offset that is not page-aligned preserves absolute positions", async ({ page }) => {
+  let deleted = false;
+  const state = await boot(page, { explore: (_entry, request) => {
+    const params = new URL(request.url()).searchParams;
+    if (params.get("message_offset") === "72") deleted = true;
+    return { json: pagedMessages(params, deleted ? 67 : 130) };
+  } });
+  await chooseProject(page, "Alpha project");
+  await advanceToBufferBoundary(page);
+  for (let index = 4; index <= 7; index += 1) {
+    await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+    await expect(messagePageStatus(page)).toHaveText(`${index * 9 + 1}–${index * 9 + 9} of 130`);
+  }
+  await messagePager(page).getByRole("button", { name: "Next", exact: true }).click();
+  await expect(messagePageStatus(page)).toHaveText("64–67 of 67");
+  await expect(messageSection(page).locator(".feature-card h3")).toHaveText(["Synthetic message 63", "Synthetic message 64", "Synthetic message 65", "Synthetic message 66"]);
+  await expect(messagePager(page).getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+  for (let index = 6; index >= 3; index -= 1) {
+    await messagePager(page).getByRole("button", { name: "Previous", exact: true }).click();
+    await expect(messagePageStatus(page)).toHaveText(`${index * 9 + 1}–${index * 9 + 9} of 67`);
+    await expect(messageSection(page).locator(".feature-card h3").first()).toHaveText(`Synthetic message ${index * 9}`);
+  }
+  expect(state.pageErrors).toEqual([]);
+});

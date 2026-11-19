@@ -1,0 +1,726 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "density-sqrt-v1",
+  "evidence": "Synthetic vectors only; no retained history or private project data.",
+  "method": "Capture one production UMAP projection per fixture; reuse it for every candidate.",
+  "reproduce": "uv run --no-project --python 3.12 --with-requirements plugins/thread-tree/server/requirements.txt python tests/density_clustering_experiments.py --output docs/density-clustering-experiments.json",
+  "runtime": {
+    "python": "3.12.13",
+    "system": "Darwin",
+    "machine": "arm64",
+    "umap-learn": "0.5.12",
+    "hdbscan": "0.8.44",
+    "numpy": "2.5.5",
+    "scipy": "1.18.1",
+    "scikit-learn": "1.9.1",
+    "numba": "0.68.1",
+    "pynndescent": "0.7.0"
+  },
+  "policies": {
+    "old": "min_cluster_size=2; min_samples=1",
+    "sqrt_proposed": "min_cluster_size=max(2,ceil(sqrt(n))); min_samples=max(1,min(10,ceil(sqrt(n)/2)))",
+    "recommended": "min_cluster_size=max(formation_min,ceil(sqrt(n))); min_samples=max(1,min(5,ceil(sqrt(n)/3)))",
+    "double_sqrt": "min_cluster_size=max(2,ceil(2*sqrt(n))); min_samples=max(1,min(10,ceil(sqrt(n)/2)))",
+    "robust_guard_rejected": "Recommended sizes; allow_single_cluster when at least 90% have original centroid cosine >=0.90"
+  },
+  "two_direction_geometry_review": {
+    "projection": "Place the first normalized prototype at 0 and the second at their original Euclidean distance d; expand by original row identity.",
+    "distance_proof": "Every original pair is identical (distance 0) or contains both prototypes (distance d). The line preserves both values and every multiplicity.",
+    "native_source": "https://hdbscan.readthedocs.io/en/latest/_modules/hdbscan/hdbscan_.html",
+    "backend_evidence": "Pinned HDBSCAN chooses Prim KDTree above 60 dimensions and Boruvka KDTree for the exact one-dimensional geometry.",
+    "measurement": "Historical bounded fit-only measurement on Darwin arm64, Python 3.12.13 and HDBSCAN 0.8.44; machine-specific observations, not performance assertions.",
+    "fixture": "Two 384-dimensional normal prototypes from NumPy seed 819, normalized and repeated equally; approved adaptive parameters and exact spanning tree.",
+    "observed_fits": [
+      {
+        "rows": 800,
+        "original_384d_ms": 226.49,
+        "exact_1d_ms": 6.05,
+        "family_sizes": [
+          400,
+          400
+        ],
+        "strengths": [
+          1.0
+        ],
+        "persistences": [
+          1.0,
+          1.0
+        ]
+      },
+      {
+        "rows": 1600,
+        "original_384d_ms": 823.4,
+        "exact_1d_ms": 12.58,
+        "family_sizes": [
+          800,
+          800
+        ],
+        "strengths": [
+          1.0
+        ],
+        "persistences": [
+          1.0,
+          1.0
+        ]
+      }
+    ],
+    "regressions": [
+      "All pairwise distances preserved exactly across original dimensions 1, 2, 32, 384, 1024.",
+      "Native production fit of 1200 duplicate 384D vectors receives one dimension, preserves two pure 600-row families and native unit strengths/persistence."
+    ]
+  },
+  "limitations": [
+    "The strict single-root guard can fragment a coherent family when one outlier is present.",
+    "The robust 90%-of-points guard absorbs the synthetic outlier; it is not adopted.",
+    "Diffuse vectors still form density groups; neither density nor membership proves semantic meaning.",
+    "An adaptive support floor can omit or merge smaller minority families as input size grows.",
+    "These fixtures justify defaults, not a universal optimum or private-corpus quality claim."
+  ],
+  "fixtures": [
+    {
+      "name": "three_families_1200",
+      "generation": {
+        "seed": 12846,
+        "dimension": 16,
+        "family_sizes": [
+          400,
+          400,
+          400
+        ],
+        "center": "orthogonal unit basis vectors",
+        "normal_stddev": 0.025
+      },
+      "original_cohesive_fraction": 0.0,
+      "umap_parameters": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0.0,
+        "metric": "cosine",
+        "init": "spectral",
+        "unique": true,
+        "random_state": 42,
+        "n_jobs": 1
+      },
+      "results": [
+        {
+          "candidate": "old",
+          "minimum": 2,
+          "min_samples": 1,
+          "allow_single_cluster": false,
+          "groups": 315,
+          "assigned": 1027,
+          "coverage": 0.856,
+          "purity": 1.0,
+          "adjusted_rand_index": 0.008,
+          "group_size_histogram": {
+            "2": 129,
+            "3": 86,
+            "4": 43,
+            "5": 28,
+            "6": 15,
+            "7": 8,
+            "8": 3,
+            "9": 1,
+            "10": 2
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "sqrt_proposed",
+          "minimum": 35,
+          "min_samples": 10,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 1200,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "400": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "recommended",
+          "minimum": 35,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 1200,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "400": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "double_sqrt",
+          "minimum": 70,
+          "min_samples": 10,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 1200,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "400": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "robust_guard_rejected",
+          "minimum": 35,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 1200,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "400": 3
+          },
+          "outlier_is_noise": null
+        }
+      ]
+    },
+    {
+      "name": "three_families_90",
+      "generation": {
+        "seed": 428,
+        "dimension": 16,
+        "family_sizes": [
+          30,
+          30,
+          30
+        ],
+        "center": "orthogonal unit basis vectors",
+        "normal_stddev": 0.03
+      },
+      "original_cohesive_fraction": 0.0,
+      "umap_parameters": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0.0,
+        "metric": "cosine",
+        "init": "spectral",
+        "unique": true,
+        "random_state": 42,
+        "n_jobs": 1
+      },
+      "results": [
+        {
+          "candidate": "old",
+          "minimum": 2,
+          "min_samples": 1,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 90,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "sqrt_proposed",
+          "minimum": 10,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 90,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "recommended",
+          "minimum": 10,
+          "min_samples": 4,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 90,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "double_sqrt",
+          "minimum": 19,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 90,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 3
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "robust_guard_rejected",
+          "minimum": 10,
+          "min_samples": 4,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 90,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 3
+          },
+          "outlier_is_noise": null
+        }
+      ]
+    },
+    {
+      "name": "imbalanced_520",
+      "generation": {
+        "seed": 287,
+        "dimension": 16,
+        "family_sizes": [
+          400,
+          30,
+          30,
+          30,
+          30
+        ],
+        "center": "orthogonal unit basis vectors",
+        "normal_stddev": 0.025
+      },
+      "original_cohesive_fraction": 0.769231,
+      "umap_parameters": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0.0,
+        "metric": "cosine",
+        "init": "spectral",
+        "unique": true,
+        "random_state": 42,
+        "n_jobs": 1
+      },
+      "results": [
+        {
+          "candidate": "old",
+          "minimum": 2,
+          "min_samples": 1,
+          "allow_single_cluster": false,
+          "groups": 137,
+          "assigned": 468,
+          "coverage": 0.9,
+          "purity": 1.0,
+          "adjusted_rand_index": 0.014,
+          "group_size_histogram": {
+            "2": 66,
+            "3": 30,
+            "4": 23,
+            "5": 10,
+            "6": 1,
+            "7": 4,
+            "10": 1,
+            "30": 2
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "sqrt_proposed",
+          "minimum": 23,
+          "min_samples": 10,
+          "allow_single_cluster": false,
+          "groups": 5,
+          "assigned": 520,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 4,
+            "400": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "recommended",
+          "minimum": 23,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 5,
+          "assigned": 520,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 4,
+            "400": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "double_sqrt",
+          "minimum": 46,
+          "min_samples": 10,
+          "allow_single_cluster": false,
+          "groups": 2,
+          "assigned": 520,
+          "coverage": 1.0,
+          "purity": 0.827,
+          "adjusted_rand_index": 0.915,
+          "group_size_histogram": {
+            "120": 1,
+            "400": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "robust_guard_rejected",
+          "minimum": 23,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 5,
+          "assigned": 520,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": 1.0,
+          "group_size_histogram": {
+            "30": 4,
+            "400": 1
+          },
+          "outlier_is_noise": null
+        }
+      ]
+    },
+    {
+      "name": "one_family_80",
+      "generation": {
+        "seed": 428,
+        "dimension": 16,
+        "family_sizes": [
+          80
+        ],
+        "center": "first unit basis vector",
+        "normal_stddev": 0.02
+      },
+      "original_cohesive_fraction": 1.0,
+      "umap_parameters": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0.0,
+        "metric": "cosine",
+        "init": "spectral",
+        "unique": true,
+        "random_state": 42,
+        "n_jobs": 1
+      },
+      "results": [
+        {
+          "candidate": "old",
+          "minimum": 2,
+          "min_samples": 1,
+          "allow_single_cluster": true,
+          "groups": 1,
+          "assigned": 80,
+          "coverage": 1.0,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "80": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "sqrt_proposed",
+          "minimum": 9,
+          "min_samples": 5,
+          "allow_single_cluster": true,
+          "groups": 1,
+          "assigned": 72,
+          "coverage": 0.9,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "72": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "recommended",
+          "minimum": 9,
+          "min_samples": 3,
+          "allow_single_cluster": true,
+          "groups": 1,
+          "assigned": 76,
+          "coverage": 0.95,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "76": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "double_sqrt",
+          "minimum": 18,
+          "min_samples": 5,
+          "allow_single_cluster": true,
+          "groups": 1,
+          "assigned": 18,
+          "coverage": 0.225,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "18": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "robust_guard_rejected",
+          "minimum": 9,
+          "min_samples": 3,
+          "allow_single_cluster": true,
+          "groups": 1,
+          "assigned": 76,
+          "coverage": 0.95,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "76": 1
+          },
+          "outlier_is_noise": null
+        }
+      ]
+    },
+    {
+      "name": "one_family_80_plus_outlier",
+      "generation": {
+        "seed": 428,
+        "dimension": 16,
+        "family_sizes": [
+          80
+        ],
+        "center": "first unit basis vector",
+        "normal_stddev": 0.02,
+        "outlier": "one exact ninth unit basis vector"
+      },
+      "original_cohesive_fraction": 0.987654,
+      "umap_parameters": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0.0,
+        "metric": "cosine",
+        "init": "spectral",
+        "unique": true,
+        "random_state": 42,
+        "n_jobs": 1
+      },
+      "results": [
+        {
+          "candidate": "old",
+          "minimum": 2,
+          "min_samples": 1,
+          "allow_single_cluster": false,
+          "groups": 23,
+          "assigned": 75,
+          "coverage": 0.926,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "2": 14,
+            "3": 3,
+            "4": 2,
+            "5": 2,
+            "10": 2
+          },
+          "outlier_is_noise": true
+        },
+        {
+          "candidate": "sqrt_proposed",
+          "minimum": 9,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 3,
+          "assigned": 48,
+          "coverage": 0.593,
+          "purity": 0.979,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "10": 1,
+            "14": 1,
+            "24": 1
+          },
+          "outlier_is_noise": false
+        },
+        {
+          "candidate": "recommended",
+          "minimum": 9,
+          "min_samples": 3,
+          "allow_single_cluster": false,
+          "groups": 4,
+          "assigned": 70,
+          "coverage": 0.864,
+          "purity": 1.0,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "11": 1,
+            "12": 1,
+            "17": 1,
+            "30": 1
+          },
+          "outlier_is_noise": true
+        },
+        {
+          "candidate": "double_sqrt",
+          "minimum": 18,
+          "min_samples": 5,
+          "allow_single_cluster": false,
+          "groups": 2,
+          "assigned": 48,
+          "coverage": 0.593,
+          "purity": 0.979,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "24": 2
+          },
+          "outlier_is_noise": false
+        },
+        {
+          "candidate": "robust_guard_rejected",
+          "minimum": 9,
+          "min_samples": 3,
+          "allow_single_cluster": true,
+          "groups": 1,
+          "assigned": 72,
+          "coverage": 0.889,
+          "purity": 0.986,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "72": 1
+          },
+          "outlier_is_noise": false
+        }
+      ]
+    },
+    {
+      "name": "diffuse_120",
+      "generation": {
+        "seed": 639,
+        "dimension": 16,
+        "rows": 120,
+        "normal_stddev": 1,
+        "center": "zero; no semantic family ground truth"
+      },
+      "original_cohesive_fraction": 0.0,
+      "umap_parameters": {
+        "n_neighbors": 15,
+        "n_components": 5,
+        "min_dist": 0.0,
+        "metric": "cosine",
+        "init": "spectral",
+        "unique": true,
+        "random_state": 42,
+        "n_jobs": 1
+      },
+      "results": [
+        {
+          "candidate": "old",
+          "minimum": 2,
+          "min_samples": 1,
+          "allow_single_cluster": false,
+          "groups": 31,
+          "assigned": 111,
+          "coverage": 0.925,
+          "purity": null,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "2": 11,
+            "3": 6,
+            "4": 7,
+            "5": 3,
+            "6": 2,
+            "7": 1,
+            "9": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "sqrt_proposed",
+          "minimum": 11,
+          "min_samples": 6,
+          "allow_single_cluster": false,
+          "groups": 2,
+          "assigned": 88,
+          "coverage": 0.733,
+          "purity": null,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "29": 1,
+            "59": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "recommended",
+          "minimum": 11,
+          "min_samples": 4,
+          "allow_single_cluster": false,
+          "groups": 2,
+          "assigned": 100,
+          "coverage": 0.833,
+          "purity": null,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "35": 1,
+            "65": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "double_sqrt",
+          "minimum": 22,
+          "min_samples": 6,
+          "allow_single_cluster": false,
+          "groups": 2,
+          "assigned": 88,
+          "coverage": 0.733,
+          "purity": null,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "29": 1,
+            "59": 1
+          },
+          "outlier_is_noise": null
+        },
+        {
+          "candidate": "robust_guard_rejected",
+          "minimum": 11,
+          "min_samples": 4,
+          "allow_single_cluster": false,
+          "groups": 2,
+          "assigned": 100,
+          "coverage": 0.833,
+          "purity": null,
+          "adjusted_rand_index": null,
+          "group_size_histogram": {
+            "35": 1,
+            "65": 1
+          },
+          "outlier_is_noise": null
+        }
+      ]
+    }
+  ]
+}

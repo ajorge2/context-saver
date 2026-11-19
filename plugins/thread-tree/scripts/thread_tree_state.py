@@ -1055,6 +1055,34 @@ def _record_debt_event(
     )
 
 
+def _accepted_span_path(
+    db: sqlite3.Connection, project_id: str, target_id: str | None,
+) -> list[sqlite3.Row]:
+    """Recheck a prototype and its primary ancestors under the writer lock."""
+
+    if target_id is None:
+        return []
+    path = []
+    current = target_id
+    for layer in LAYERS:
+        node = db.execute(
+            """SELECT n.id, n.lifecycle FROM semantic_nodes n
+               WHERE n.id=? AND n.project_id=? AND n.layer=? AND n.lifecycle!='retired'
+                 AND EXISTS (SELECT 1 FROM semantic_node_memberships m
+                             JOIN turn_chunks c ON c.id=m.chunk_id
+                             WHERE m.node_id=n.id AND c.project_id=n.project_id AND c.evicted=0)""",
+            (current, project_id, layer),
+        ).fetchone()
+        if node is None:
+            break
+        path.append(node)
+        edge = db.execute("SELECT parent_id FROM semantic_edges WHERE child_id=? AND primary_edge=1", (current,)).fetchone()
+        if edge is None:
+            break
+        current = edge["parent_id"]
+    return path
+
+
 def complete_turn_ingestion(
     db: sqlite3.Connection,
     turn_id: str,
@@ -1120,6 +1148,20 @@ def complete_turn_ingestion(
             layer_states = raw_chunk.get("layer_states") if isinstance(raw_chunk.get("layer_states"), Mapping) else {}
             for layer in LAYERS:
                 state, target_id, confidence = _normalize_layer_state(layer_states.get(layer))
+                if layer == "span" and target_id is not None:
+                    path = _accepted_span_path(db, turn["project_id"], target_id)
+                    if not path:
+                        # A fit may have replaced this prototype after the
+                        # worker scored it. Keep the chunk on the frontier.
+                        state, target_id, confidence = "unassigned", None, None
+                    else:
+                        state = path[0]["lifecycle"]
+                        db.executemany(
+                            """INSERT INTO semantic_node_memberships(node_id, chunk_id, membership_confidence)
+                               VALUES (?, ?, ?) ON CONFLICT(node_id, chunk_id) DO UPDATE SET
+                               membership_confidence=MAX(COALESCE(membership_confidence, 0), excluded.membership_confidence)""",
+                            [(node["id"], chunk_id, confidence if confidence is not None else 1.0) for node in path],
+                        )
                 db.execute(
                     """INSERT INTO chunk_layer_states
                        (chunk_id, layer, state, target_id, membership_confidence, updated_at)
@@ -1219,15 +1261,15 @@ def schedule_routine_fit(db: sqlite3.Connection, project_id: str) -> dict[str, A
         return dict(existing)
     if not _routine_fit_retry_allowed(db, project_id):
         return None
-    layers = [
+    due_layers = {
         row["layer"]
         for row in db.execute(
             """SELECT layer FROM fit_debt
-               WHERE project_id = ? AND debt_count >= threshold AND state = 'idle'
-               ORDER BY layer""",
+               WHERE project_id = ? AND debt_count >= threshold AND state = 'idle'""",
             (project_id,),
         )
-    ]
+    }
+    layers = [layer for layer in LAYERS if layer in due_layers]
     if not layers:
         return None
     chunk_watermark = db.execute(
@@ -1298,14 +1340,23 @@ def claim_fit_run(db: sqlite3.Connection, run_id: str, *, resume: bool = False) 
     row = db.execute("SELECT * FROM fit_runs WHERE id = ?", (run_id,)).fetchone()
     if row is None:
         raise KeyError(run_id)
+    # Older queued runs stored alphabetic order, which tried broad before
+    # either of its child layers existed. Normalize durable retries as well.
+    requested_layers = json.loads(row["layers"])
+    if set(requested_layers) - set(LAYERS):
+        raise ValueError("fit contains an unknown layer")
+    layers = [layer for layer in LAYERS if layer in requested_layers]
     # Only the project maintenance lock holder may resume a running fit.
     if resume and row["state"] == "running":
-        return dict(row)
+        if layers != requested_layers:
+            with db:
+                db.execute("UPDATE fit_runs SET layers=? WHERE id=?", (json.dumps(layers), run_id))
+        return {**dict(row), "layers": json.dumps(layers)}
     _validate_transition(row["state"], "running", FIT_TRANSITIONS, "fit")
-    layers = json.loads(row["layers"])
     now = utc_now()
     with db:
-        db.execute("UPDATE fit_runs SET state = 'running', started_at = ? WHERE id = ?", (now, run_id))
+        db.execute("UPDATE fit_runs SET state = 'running', started_at = ?, layers=? WHERE id = ?",
+                   (now, json.dumps(layers), run_id))
         db.executemany(
             "UPDATE fit_debt SET state = 'running', updated_at = ? WHERE project_id = ? AND layer = ?",
             [(now, row["project_id"], layer) for layer in layers],
