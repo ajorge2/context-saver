@@ -9,6 +9,8 @@ const scrollSpacer = document.querySelector("[data-scroll-spacer]");
 
 let projects = [];
 let selectedProjectValue = "";
+let projectLoadState = "loading";
+let projectRequestVersion = 0;
 let messageSearchOnly = false;
 
 function selectedProject() {
@@ -83,37 +85,47 @@ function renderProjectOptions(statusMessage = "") {
     status.textContent = statusMessage || (projects.length ? "No project found." : "No connected projects yet.");
     status.hidden = projects.length > 0;
   });
-  setSelectedProject(projects.some((project) => project.value === selectedProjectValue)
-    ? selectedProjectValue
-    : "");
+  setSelectedProject(selectedProjectValue, { refresh: true });
 }
 
 async function loadConnectedProjects() {
+  const requestVersion = ++projectRequestVersion;
   try {
     const threadsResponse = await fetch("/api/threads?include_all=1", { cache: "no-store" });
     if (!threadsResponse.ok) throw new Error("Project data is unavailable");
     const threads = await threadsResponse.json();
-    projects = (Array.isArray(threads) ? threads : [])
+    if (!Array.isArray(threads)) throw new Error("Project data is unavailable");
+    if (requestVersion !== projectRequestVersion) return;
+    projects = threads
+      .filter((project) => project && typeof project.id === "string" && project.id.trim())
       .map((project) => ({
-        value: String(project.id),
-        label: project.title || project.cwd?.split("/").filter(Boolean).at(-1) || "Project",
+        value: project.id,
+        label: project.title || project.cwd?.split(/[\\/]/).filter(Boolean).at(-1) || "Project",
       }));
+    projectLoadState = "ready";
     renderProjectOptions();
   } catch (_error) {
+    if (requestVersion !== projectRequestVersion) return;
     projects = [];
+    projectLoadState = "error";
     renderProjectOptions("Could not load connected projects.");
   }
 }
 
-function setSelectedProject(nextValue) {
-  selectedProjectValue = nextValue;
+function setSelectedProject(nextValue, { refresh = false } = {}) {
+  // The server ranks available projects by actual plugin use. Browsing and
+  // manual selection do not change that durable order.
+  const nextProject = projects.find((project) => project.value === nextValue) || projects[0];
+  const previousValue = selectedProjectValue;
+  selectedProjectValue = nextProject?.value || "";
   const selected = selectedProject();
 
   document.querySelectorAll('[data-combobox][data-combobox-mode="project"]').forEach((combobox) => {
     const valueLabel = combobox.querySelector("[data-combobox-value]");
     const clear = combobox.querySelector(".combobox-clear");
-    valueLabel.textContent = selected?.label || combobox.dataset.defaultLabel;
-    clear.hidden = !selected;
+    valueLabel.textContent = selected?.label || (projectLoadState === "ready"
+      ? "No connected projects" : projectLoadState === "error" ? "Projects unavailable" : "Loading projects…");
+    clear.hidden = true;
     combobox.classList.toggle("has-value", Boolean(selected));
     combobox.querySelectorAll(".combobox-option").forEach((option) => {
       const isSelected = option.dataset.value === selectedProjectValue;
@@ -122,9 +134,11 @@ function setSelectedProject(nextValue) {
     });
   });
 
-  document.dispatchEvent(new CustomEvent("projectchange", {
-    detail: { label: selected?.label || "", value: selectedProjectValue },
-  }));
+  if (refresh || previousValue !== selectedProjectValue) {
+    document.dispatchEvent(new CustomEvent("projectchange", {
+      detail: { label: selected?.label || "", value: selectedProjectValue },
+    }));
+  }
 }
 
 function initializeCombobox(host) {
@@ -164,7 +178,7 @@ function initializeCombobox(host) {
 
   clear.addEventListener("click", (event) => {
     event.stopPropagation();
-    if (mode === "project") setSelectedProject("");
+    if (mode === "project") return;
     else {
       host.querySelector("[data-combobox-value]").textContent = combobox.dataset.defaultLabel;
       clear.hidden = true;
@@ -181,8 +195,7 @@ function initializeCombobox(host) {
     const option = event.target.closest(".combobox-option");
     if (!option) return;
     if (mode === "project") {
-      const nextValue = option.dataset.value === selectedProjectValue ? "" : option.dataset.value;
-      setSelectedProject(nextValue);
+      setSelectedProject(option.dataset.value);
     } else {
       host.querySelector("[data-combobox-value]").textContent = option.textContent.trim();
       clear.hidden = false;
@@ -475,6 +488,7 @@ const contextExplorer = (() => {
   let selected = {};
   let browsing = false;
   let messageStatus = '';
+  let browseStatus = '';
   let activeMessageRequest = null;
   let activeRequest = null;
   let index = window.ContextExplorerModel.indexPayload(null);
@@ -553,7 +567,7 @@ const contextExplorer = (() => {
     } else if (layerKey === 'specific_message' && browsing) {
       empty.textContent = 'No messages to show.';
     } else {
-      empty.textContent = payload ? `No ${layer.plural} match the active filters.` : 'Select a project first.';
+      empty.textContent = payload ? `No ${layer.plural} match the active filters.` : selectedProjectValue ? 'Loading saved context…' : projectLoadState === 'error' ? 'Projects are unavailable.' : 'No connected projects.';
     }
     empty.hidden = options.length > 0;
     value.textContent = selectedNode?.title || host.querySelector("[data-combobox]")?.dataset.defaultLabel || `Select ${layer.name}...`;
@@ -567,7 +581,14 @@ const contextExplorer = (() => {
     if (!list || !pager) return;
     pager.hidden = true;
     if (!payload) {
-      list.innerHTML = '<div class="feature-empty"><strong>Choose a project to get started</strong><span>Select a connected project to browse its saved context.</span></div>';
+      const title = projectLoadState === 'error' ? 'Couldn’t load connected projects'
+        : projectLoadState === 'loading' ? 'Loading connected projects…'
+        : !projects.length ? 'No connected projects'
+        : browseStatus === 'error' ? 'Couldn’t load saved context' : 'Loading saved context…';
+      const description = projectLoadState === 'ready' && !projects.length
+        ? 'Use Context Saver in a project chat to connect it.' : '';
+      list.innerHTML = `<div class="feature-empty"><strong>${title}</strong>${description ? `<span>${description}</span>` : ''}${browseStatus === 'error' ? '<button type="button" class="feature-retry" data-retry-project>Try again</button>' : ''}</div>`;
+      list.querySelector('[data-retry-project]')?.addEventListener('click', browseProject);
       return;
     }
     if (layerKey === 'specific_message' && messageStatus) {
@@ -699,6 +720,7 @@ const contextExplorer = (() => {
 
   const load = (nextPayload, browse = false, preserveSelection = false) => {
     payload = nextPayload;
+    browseStatus = '';
     browsing = browse;
     messageStatus = '';
     index = window.ContextExplorerModel.indexPayload(payload);
@@ -751,7 +773,12 @@ const contextExplorer = (() => {
     cancelRequest();
     cancelMessageRequest();
     load(null);
-    if (selectedProjectValue) void fetchPayload("").catch(() => {});
+    const requestedProject = selectedProjectValue;
+    if (requestedProject) void fetchPayload("").catch(() => {
+      if (selectedProjectValue !== requestedProject) return;
+      browseStatus = 'error';
+      render();
+    });
   };
   document.addEventListener("projectchange", browseProject);
   render();
@@ -762,6 +789,15 @@ const contextExplorer = (() => {
       return fetchPayload(query);
     },
     clear: browseProject,
+    clearTopicFilters() {
+      if (!layerSelectors.slice(0, -1).some(({ key }) => selected[key])) return;
+      cancelMessageRequest();
+      messageStatus = '';
+      selected = selected.specific_message ? { specific_message: selected.specific_message } : {};
+      resetPages();
+      if (browsing && !activeRequest) void refreshBrowseMessages();
+      render();
+    },
   };
 })();
 
@@ -1329,6 +1365,8 @@ function initializeSpotlight(host) {
     messageSearchOnly = !messageSearchOnly;
     messageToggle.setAttribute("aria-pressed", String(messageSearchOnly));
     host.classList.toggle("is-message-only", messageSearchOnly);
+    if (messageSearchOnly) contextExplorer.clearTopicFilters();
+    syncSlideMode();
     const label = projectSearchPlaceholder();
     input.setAttribute("aria-label", label);
     if (!input.value) setPlaceholder(label);
@@ -1411,6 +1449,7 @@ function initializeAmbientBackground() {
 initializeAmbientBackground();
 
 let activeSection = -1;
+let navigationEpoch = 0;
 let ticking = false;
 let scrollVisualSettleTimer = 0;
 let lastVisualScrollY = window.scrollY;
@@ -1441,6 +1480,7 @@ function updateScrollPosition() {
   let nearestIndex = 0;
   let nearestDistance = Number.POSITIVE_INFINITY;
   sections.forEach((section, index) => {
+    if (section.hidden) return;
     const sectionCenter = section.offsetTop - window.scrollY + section.offsetHeight / 2;
     const distance = Math.abs(sectionCenter - viewportCenter);
     if (distance < nearestDistance) {
@@ -1453,7 +1493,8 @@ function updateScrollPosition() {
 
 function scrollToSection(index) {
   const section = sections[index];
-  if (!section) return;
+  if (!section || section.hidden) return;
+  navigationEpoch += 1;
   window.scrollTo({
     top: section.offsetTop,
     behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
@@ -1462,6 +1503,44 @@ function scrollToSection(index) {
 
 function syncScrollSpace() {
   scrollSpacer.style.height = `${sectionsTrack.scrollHeight}px`;
+}
+
+function syncSlideMode() {
+  const epoch = ++navigationEpoch;
+  const visibleIndices = sections.map((_, index) => index).filter((index) => (
+    !messageSearchOnly || index === 0 || index === sections.length - 1
+  ));
+  const destination = visibleIndices.includes(activeSection) ? activeSection : 0;
+  sections.forEach((section, index) => {
+    const position = visibleIndices.indexOf(index);
+    section.hidden = position < 0;
+    section.inert = position < 0;
+    const up = section.querySelector('.slide-up-button:not(.slide-down-button)');
+    const down = section.querySelector('.slide-down-button');
+    if (up) {
+      up.hidden = position <= 0;
+      if (position > 0) up.dataset.scrollTo = String(visibleIndices[position - 1]);
+    }
+    if (down) {
+      down.hidden = position < 0 || position === visibleIndices.length - 1;
+      if (!down.hidden) down.dataset.scrollTo = String(visibleIndices[position + 1]);
+    }
+    section.querySelectorAll('.slide-up-button').forEach((button) => button.classList.remove('is-leaving'));
+  });
+  dots.forEach((dot) => {
+    dot.hidden = !visibleIndices.includes(Number(dot.dataset.sectionIndex));
+  });
+  syncScrollSpace();
+  activeSection = -1;
+  const alignDestination = () => {
+    if (epoch !== navigationEpoch) return;
+    window.scrollTo({ top: sections[destination].offsetTop, behavior: 'instant' });
+    updateScrollPosition();
+  };
+  // Native smooth scrolling can deliver one compositor frame after the mode's
+  // layout change. Reconcile after that frame too; a newer navigation wins.
+  alignDestination();
+  requestAnimationFrame(alignDestination);
 }
 
 dots.forEach((dot) => dot.addEventListener("click", () => scrollToSection(Number(dot.dataset.sectionIndex))));

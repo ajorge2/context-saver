@@ -142,6 +142,7 @@ def prepare_current_chat(
 ) -> dict[str, Any]:
     """Initialize the current chat once, then return immediately on later calls."""
 
+    invoked_at = state.plugin_invocation_time()
     session = _resolve_current_session(project_root=project_root, thread_id=thread_id)
     if session is None:
         return {
@@ -182,7 +183,9 @@ def prepare_current_chat(
                 project_id=project_id,
                 thread_id=identifier,
                 transcript_path=session.get("transcript_path") or None,
+                invoked_at=invoked_at,
             )
+            state.record_project_invocation(db, project_id, invoked_at)
             return {
                 "status": "ready",
                 "first_invocation": False,
@@ -240,7 +243,11 @@ def prepare_current_chat(
             project_id=project_id,
             thread_id=identifier,
             transcript_path=str(path),
+            invoked_at=invoked_at,
         )
+        # Another first-invocation worker may already have queued this project.
+        # Otherwise its accepted activation stamp is merged after enqueue.
+        state.record_project_invocation(db, project_id, invoked_at)
     if not first_invocation:
         return {
             "status": "ready",
@@ -264,6 +271,14 @@ def prepare_current_chat(
             "first_invocation": first_invocation,
             "continue_with_user_request": True,
         }
+    with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+        project_row = db.execute("SELECT updated_at FROM projects WHERE id=?", (project_id,)).fetchone()
+        decision = scope.scope_decision(
+            thread_tree.load_scope_config(), canonical, identifier,
+            last_activity_at=str(project_row["updated_at"] or "") if project_row else None,
+        )
+        if decision["active"]:
+            state.record_project_invocation(db, project_id, invoked_at)
     processed = pipeline.process_project(project_id, thread_id=identifier)
     failures = list(processed.get("failures") or [])
     db = thread_tree.connect_db()
@@ -422,22 +437,20 @@ def search_project_history(
 ) -> dict[str, Any]:
     """Search one project's history through a single global lookup and bounded widening."""
 
+    invoked_at = state.plugin_invocation_time()
     query = query.strip()
     if not query:
         raise ValueError("query is required")
     if not 1 <= int(max_results) <= 20:
         raise ValueError("max_results must be between 1 and 20")
     excluded = {str(chunk_id) for chunk_id in exclude_chunk_ids}
-    project_id, canonical_root, project_scope = _resolve_project(project_root)
-    db = thread_tree.connect_db()
-    try:
+    with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+        project_id, canonical_root, project_scope = _resolve_project(project_root)
+        state.record_project_invocation(db, project_id, invoked_at)
         watermark = int(db.execute(
             "SELECT COALESCE(MAX(seq), 0) FROM turn_chunks WHERE project_id = ? AND evicted = 0",
             (project_id,),
         ).fetchone()[0])
-    finally:
-        db.close()
-
     # `evidence_needed` describes answer-bearing evidence for the calling model;
     # it is not query expansion and the tool does not decide whether returned
     # text answers the model's information need. Mixing it into candidate

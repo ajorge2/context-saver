@@ -2656,14 +2656,19 @@ def list_projects() -> list[dict[str, Any]]:
             "title": Path(row["cwd"]).name if row["cwd"] else "Project",
             "cwd": row["cwd"],
             "updated_at": row["updated_at"],
+            "last_plugin_invoked_at": row["effective_plugin_invoked_at"],
             "windows": row["turns"],
             "nodes": row["nodes"],
         }
         for row in db.execute(
-            """SELECT p.*, COUNT(DISTINCT t.id) AS turns, COUNT(DISTINCT n.id) AS nodes
+            """SELECT p.*, COUNT(DISTINCT t.id) AS turns, COUNT(DISTINCT n.id) AS nodes,
+                      NULLIF(MAX(COALESCE(p.last_plugin_invoked_at, ''),
+                                 COALESCE(a.last_invoked_at, '')), '') AS effective_plugin_invoked_at
                FROM projects p LEFT JOIN turn_ingestion t ON t.project_id=p.id
                LEFT JOIN semantic_nodes n ON n.project_id=p.id
-               GROUP BY p.id ORDER BY p.updated_at DESC"""
+               LEFT JOIN (SELECT project_id, MAX(last_invoked_at) AS last_invoked_at
+                          FROM chat_plugin_activations GROUP BY project_id) a ON a.project_id=p.id
+               GROUP BY p.id ORDER BY effective_plugin_invoked_at DESC, p.id"""
         )
     ]
     db.close()

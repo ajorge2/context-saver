@@ -36,7 +36,9 @@ Start a new Claude Code session in your project and run `/thread-tree:context-sa
 - **Codex** — Attach **Context Saver** to a chat and send **Open Context Saver**.
 - **Claude Code** — Run `/thread-tree:context-saver Open Context Saver` in your project.
 
-The viewer opens in your browser. Select a project to browse its subjects, broad topics, specific topics, and messages, or enter a search. Message pages continue through the selected history. Click a card to inspect the source material. Use **Connections** to pause a chat or remove its saved context.
+The viewer opens with the most recently used connected project selected. Browse its subjects, broad topics, specific topics, and messages, or enter a search. If that project is removed, the next most recent available project takes its place.
+
+For a simpler messages-only view, focus the search bar and select **M**. Only the search and Specific Messages slides remain. Message pages continue through the selected history. Click a card to inspect its sources, or open **Connections** to pause a chat or remove its saved context.
 
 ![Context Saver viewer showing a grid of specific topics from a sample project](docs/viewer.png)
 

@@ -11,6 +11,7 @@ import io
 import json
 import os
 import socket
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -169,9 +170,17 @@ class BoundaryResilienceTests(unittest.TestCase):
             chunk_id = db.execute("SELECT id FROM turn_chunks WHERE thread_id=? ORDER BY seq", (chat,)).fetchone()[0]
         return f"message:{chunk_id}"
 
-    def snapshot(self) -> str:
+    def snapshot(self, *, ignore_plugin_recency: str | None = None) -> str:
         with closing(thread_tree.connect_db()) as db:
-            state_dump = "\n".join(db.iterdump()).encode()
+            if ignore_plugin_recency:
+                # Accepted MCP calls may update one usage stamp. Normalize
+                # only that field in a copy; canonical evidence stays exact.
+                with closing(sqlite3.connect(":memory:")) as copied:
+                    db.backup(copied)
+                    copied.execute("UPDATE projects SET last_plugin_invoked_at=NULL WHERE id=?", (ignore_plugin_recency,))
+                    state_dump = "\n".join(copied.iterdump()).encode()
+            else:
+                state_dump = "\n".join(db.iterdump()).encode()
         return hashlib.sha256(state_dump).hexdigest()
 
     @staticmethod
@@ -263,6 +272,7 @@ class BoundaryResilienceTests(unittest.TestCase):
 
     def test_historical_corpus_is_read_only_and_paused_project_still_browses(self) -> None:
         before = self.snapshot()
+        evidence_before = self.snapshot(ignore_plugin_recency=self.alpha_id)
         status, pause = self.connection("pause", self.alpha)
         self.assertEqual(status, 200)
         self.assertTrue(any(item["status"] == "paused" for item in pause["connections"] if item["id"] == self.alpha_id))
@@ -270,23 +280,24 @@ class BoundaryResilienceTests(unittest.TestCase):
             model_tools.search_project_history("opalfixture", project_root=str(self.alpha))
         self.assertTrue(self.message_rows(self.get("explore", q="opalfixture", thread_id=self.alpha_id)[1]))
         self.assertIn(self.alpha_id, {row["id"] for row in self.get("threads")[1]})
+        self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.connection("resume", self.alpha)[0], 200)
         self.assertTrue(model_tools.search_project_history("opalfixture", project_root=str(self.alpha))["evidence"])
-        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.snapshot(ignore_plugin_recency=self.alpha_id), evidence_before)
         self.launch_process.assert_not_called()
 
     def test_chat_pause_and_resume_preserve_chunks_and_other_chat_eligibility(self) -> None:
         for allowlist in (None, ["removable-chat", "retained-chat"]):
             with self.subTest(explicit_allowlist=allowlist is not None):
                 self.configure(self.alpha, self.beta, alpha_chats=allowlist)
-                before = self.snapshot()
+                before = self.snapshot(ignore_plugin_recency=self.alpha_id)
                 self.assertEqual(self.connection("pause", self.alpha, "removable-chat")[0], 200)
                 results = model_tools.search_project_history("archive", project_root=str(self.alpha))["evidence"]
                 self.assertEqual({item["thread_id"] for item in results}, {"retained-chat"})
                 self.assertEqual(self.connection("resume", self.alpha, "removable-chat")[0], 200)
                 results = model_tools.search_project_history("saffronfixture", project_root=str(self.alpha))["evidence"]
                 self.assertEqual({item["thread_id"] for item in results}, {"removable-chat"})
-                self.assertEqual(self.snapshot(), before)
+                self.assertEqual(self.snapshot(ignore_plugin_recency=self.alpha_id), before)
 
     def test_retained_unselected_folder_is_paused_and_folder_resume_restores_consent(self) -> None:
         before = self.snapshot()
@@ -638,13 +649,15 @@ class BoundaryResilienceTests(unittest.TestCase):
         self.assertNotIn("removable-chat", {chat["id"] for chat in folder["chats"]})
 
     def test_transient_search_query_cannot_write_semantic_content_or_expand_sql_wildcards(self) -> None:
-        before = self.snapshot()
+        before = self.snapshot(ignore_plugin_recency=self.alpha_id)
         terms = ("transient_boundary_marker_2197", "%", "_")
         for term in terms:
             with self.subTest(term=term):
+                http_before = self.snapshot()
                 self.assertFalse(self.message_rows(self.get("explore", q=term, thread_id=self.alpha_id)[1]))
+                self.assertEqual(self.snapshot(), http_before)
                 self.assertFalse(model_tools.search_project_history(term, project_root=str(self.alpha))["evidence"])
-        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.snapshot(ignore_plugin_recency=self.alpha_id), before)
 
 
 if __name__ == "__main__":

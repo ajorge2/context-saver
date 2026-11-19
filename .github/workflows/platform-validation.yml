@@ -127,7 +127,7 @@ jobs:
         run: python -m unittest discover -s tests -p test_terminal_arguments.py -v
       - name: Run browser regression tests
         if: always() && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
-        timeout-minutes: 5
+        timeout-minutes: 6
         working-directory: tests/browser
         run: |
           npm test

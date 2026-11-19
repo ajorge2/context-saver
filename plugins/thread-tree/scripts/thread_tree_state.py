@@ -91,6 +91,11 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def plugin_invocation_time() -> str:
+    """Order plugin calls independently of background indexing/completion."""
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
+
+
 def stable_id(prefix: str, *parts: Any) -> str:
     raw = "\x1f".join(str(part) for part in parts)
     return f"{prefix}_{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:20]}"
@@ -164,7 +169,8 @@ def initialize_state_schema(db: sqlite3.Connection) -> None:
             id TEXT PRIMARY KEY,
             cwd TEXT,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            last_plugin_invoked_at TEXT
         );
 
         CREATE TABLE IF NOT EXISTS turn_ingestion (
@@ -438,6 +444,12 @@ def initialize_state_schema(db: sqlite3.Connection) -> None:
     _initialize_staged_prompts(db)
     # Existing installations predate the orchestration columns. SQLite has no
     # portable `ADD COLUMN IF NOT EXISTS`, so make migrations explicit.
+    existing_project = {row[1] for row in db.execute("PRAGMA table_info(projects)")}
+    if "last_plugin_invoked_at" not in existing_project:
+        with db:
+            db.execute("BEGIN IMMEDIATE")
+            if "last_plugin_invoked_at" not in {row[1] for row in db.execute("PRAGMA table_info(projects)")}:
+                db.execute("ALTER TABLE projects ADD COLUMN last_plugin_invoked_at TEXT")
     existing_turn = {row[1] for row in db.execute("PRAGMA table_info(turn_ingestion)")}
     for name, definition in {
         "partial": "INTEGER NOT NULL DEFAULT 0 CHECK(partial IN (0,1))",
@@ -526,16 +538,31 @@ def chat_activation(
     return dict(row) if row else None
 
 
+def record_project_invocation(db: sqlite3.Connection, project_id: str, invoked_at: str) -> bool:
+    """Keep one monotonic usage stamp; never create a project or retain a query."""
+    with db:
+        result = db.execute(
+            """UPDATE projects SET last_plugin_invoked_at=MAX(
+                   COALESCE(last_plugin_invoked_at, ''), ?,
+                   COALESCE((SELECT MAX(last_invoked_at) FROM chat_plugin_activations
+                             WHERE project_id=projects.id), ''))
+               WHERE id=?""",
+            (invoked_at, project_id),
+        )
+    return bool(result.rowcount)
+
+
 def begin_chat_activation(
     db: sqlite3.Connection,
     *,
     project_id: str,
     thread_id: str,
     transcript_path: str | None,
+    invoked_at: str | None = None,
 ) -> tuple[dict[str, Any], bool]:
     """Begin an idempotent first-invocation backfill for one chat."""
 
-    now = utc_now()
+    now = invoked_at or utc_now()
     with db:
         inserted = db.execute(
             """INSERT OR IGNORE INTO chat_plugin_activations
@@ -552,13 +579,13 @@ def begin_chat_activation(
                 """UPDATE chat_plugin_activations
                    SET state='backfilling',
                        transcript_path=COALESCE(?, transcript_path),
-                       last_invoked_at=?, error=NULL
+                       last_invoked_at=MAX(last_invoked_at, ?), error=NULL
                    WHERE project_id=? AND thread_id=?""",
                 (transcript_path, now, project_id, thread_id),
             )
             return chat_activation(db, project_id, thread_id) or existing, True
         db.execute(
-            """UPDATE chat_plugin_activations SET last_invoked_at=?
+            """UPDATE chat_plugin_activations SET last_invoked_at=MAX(last_invoked_at, ?)
                WHERE project_id=? AND thread_id=?""",
             (now, project_id, thread_id),
         )
@@ -578,9 +605,9 @@ def finish_chat_activation(
     with db:
         db.execute(
             """UPDATE chat_plugin_activations
-               SET state=?, indexed_through_line=?, completed_at=?, error=?, last_invoked_at=?
+               SET state=?, indexed_through_line=?, completed_at=?, error=?
                WHERE project_id=? AND thread_id=?""",
-            (new_state, max(0, int(indexed_through_line)), now, error, now, project_id, thread_id),
+            (new_state, max(0, int(indexed_through_line)), now, error, project_id, thread_id),
         )
     return chat_activation(db, project_id, thread_id) or {}
 

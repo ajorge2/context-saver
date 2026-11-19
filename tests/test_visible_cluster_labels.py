@@ -35,7 +35,7 @@ class VisibleClusterLabelTests(unittest.TestCase):
         self.addCleanup(self.clear_cache)
         db = thread_tree.connect_db()
         with db:
-            db.execute("INSERT INTO projects VALUES (?, ?, ?, ?)",
+            db.execute("INSERT INTO projects (id, cwd, created_at, updated_at) VALUES (?, ?, ?, ?)",
                        (self.project, str(self.project_root), state.utc_now(), state.utc_now()))
             for node, layer in zip(self.nodes, ("span", "specific", "broad")):
                 db.execute(

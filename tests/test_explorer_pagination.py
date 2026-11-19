@@ -42,7 +42,7 @@ class ExplorerPaginationTests(unittest.TestCase):
         db = thread_tree.connect_db()
         with db:
             for project_id, directory in ((self.project_id, "project"), (self.other_project_id, "other")):
-                db.execute("INSERT INTO projects VALUES (?, ?, ?, ?)",
+                db.execute("INSERT INTO projects (id, cwd, created_at, updated_at) VALUES (?, ?, ?, ?)",
                            (project_id, str(self.root / directory), state.utc_now(), state.utc_now()))
             for node_id, layer in (("all", "broad"), ("topic", "specific"), ("early", "span"), ("later", "span")):
                 db.execute(

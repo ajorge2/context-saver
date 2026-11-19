@@ -65,7 +65,7 @@ async function boot(page, { explore, metadata, refreshStatus, refreshRetry, conn
     const asset = getViewerFixtureAsset(url);
     if (asset) return route.fulfill({ path: asset });
     if (url.pathname === "/favicon.ico") return route.fulfill({ status: 204 });
-    if (url.pathname === "/api/threads") return route.fulfill({ json: projectList });
+    if (url.pathname === "/api/threads") return route.fulfill({ json: typeof projectList === "function" ? projectList() : projectList });
     if (url.pathname === "/api/connections/refresh-status") {
       const override = await refreshStatus?.(url.searchParams.get("job"), request);
       return route.fulfill(override || { json: { state: "idle" } });
@@ -282,16 +282,29 @@ for (const [label, reply] of [
   });
 }
 
-test("EX-RACE-05: clearing the project while browse is pending cannot restore its cards", async ({ page }) => {
+test("EX-RACE-05: removing the final project while browse is pending cannot restore its cards", async ({ page }) => {
   const old = responseGate();
-  await boot(page, { explore: (_entry, request) => old.reply(request) });
-  await chooseProject(page, "Alpha project");
+  let removed = false;
+  await boot(page, {
+    projectList: () => removed ? [] : [projects[0]],
+    connections: [{ id: "alpha", path: "/fixture/alpha", name: "Alpha project", status: "connected", chatCount: 0, chats: [] }],
+    explore: (_entry, request) => old.reply(request),
+    connectionAction: () => {
+      removed = true;
+      return { json: { ok: true, connections: [] } };
+    },
+  });
   await old.arrived;
-  await page.locator("[data-hero-combobox]").getByRole("button", { name: "Clear selection" }).click();
+  await page.getByRole("button", { name: "Manage connections" }).click();
+  await page.getByRole("dialog", { name: "Connections" }).getByRole("button", { name: "Disconnect", exact: true }).click();
+  const confirmation = page.getByRole("alertdialog");
+  await confirmation.getByRole("button", { name: "Disconnect", exact: true }).click();
+  await expect(confirmation).toHaveAccessibleName("Alpha project successfully disconnected");
+  await confirmation.getByRole("button", { name: "Done", exact: true }).click();
   await expect(search(page)).toHaveAccessibleName("Search Context");
   await releaseResponse(page, old, { json: branch("alpha", "Sensitive Alpha") });
   await expect(subjectCards(page)).toHaveCount(0);
-  await expect(page.locator('[data-section="1"] .feature-empty')).toContainText("Choose a project to get started");
+  await expect(page.locator('[data-section="1"] .feature-empty')).toContainText("No connected projects");
 });
 
 test("EX-RACE-06: an obsolete search cannot unlock the current project's pending search", async ({ page }) => {
