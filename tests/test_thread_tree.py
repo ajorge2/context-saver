@@ -123,7 +123,8 @@ class ThreadTreeTests(unittest.TestCase):
         self.assertIn("Context Saver auto-indexing is active for this project", payload["systemMessage"])
         self.assertIn("Preserving about 12,345 conversation tokens", payload["systemMessage"])
         self.assertIn("queued before compaction", payload["systemMessage"])
-        self.assertIn("Settings → Hooks", payload["systemMessage"])
+        self.assertIn("Context Saver off", payload["systemMessage"])
+        self.assertIn("this chat", payload["systemMessage"])
 
     def test_token_estimate_is_local_and_message_based(self) -> None:
         messages = [
