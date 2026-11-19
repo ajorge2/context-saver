@@ -107,6 +107,8 @@ test("a failed default-project browse retains the project and can be retried", a
   const subjects = page.locator('[data-section="1"] .feature-list');
   await expect(projectBox(page)).toHaveText("Most recent");
   await expect(subjects.locator(".feature-empty strong")).toHaveText("Couldn’t load saved context");
+  await page.getByRole("button", { name: "Go to Subjects", exact: true }).click();
+  await expect.poll(() => page.locator('[data-section="1"]').evaluate((section) => Math.abs(section.getBoundingClientRect().top))).toBeLessThan(1);
   await subjects.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(subjects.locator(".feature-card h3")).toHaveText(["recent theme"]);
   await expect(projectBox(page)).toHaveText("Most recent");

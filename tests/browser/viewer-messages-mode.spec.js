@@ -55,7 +55,11 @@ const search = (page) => page.locator('[data-spotlight-input]');
 const hero = (page) => page.locator('.slide-down-button--hero');
 const section = (page, index) => page.locator(`[data-section="${index}"]`);
 const dot = (page, index) => page.locator(`[data-section-index="${index}"]`);
-async function changeMode(page) { await search(page).focus(); await toggle(page).click(); }
+async function changeMode(page) {
+  await currentSlide(page, 0);
+  await search(page).focus();
+  await toggle(page).click();
+}
 async function currentSlide(page, index) {
   await expect(dot(page, index)).toHaveClass(/is-active/);
   await expect.poll(() => page.evaluate((target) => Math.abs(
@@ -116,7 +120,13 @@ test('hidden filters clear without submitting a draft or losing committed query 
   await expect(section(page, 4).locator('.feature-card')).toHaveCount(2);
   await expect(section(page, 1).locator('[data-combobox-value]')).toHaveText('Select subject...');
   expect(requests).toHaveLength(before);
+  // Navigating away commits the draft and locks navigation until it finishes.
+  // Finish that submission explicitly before selecting a message on its slide.
+  await search(page).press('Enter');
+  await expect(hero(page)).toBeEnabled();
+  await expect.poll(() => requests.at(-1)?.query).toBe('unsubmitted revision');
   await dot(page, 4).click();
+  await currentSlide(page, 4);
   await section(page, 4).getByRole('button', { name: 'Add Beta saved message filter', exact: true }).click();
   await dot(page, 0).click();
   await changeMode(page);
