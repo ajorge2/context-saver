@@ -16,6 +16,31 @@
     "numba": "0.68.1",
     "pynndescent": "0.7.0"
   },
+  "cross_platform_noise_observation": {
+    "fixture": "one_family_80",
+    "policyVersion": "density-sqrt-v1",
+    "observations": [
+      {
+        "system": "Darwin",
+        "machine": "arm64",
+        "assigned": 76,
+        "noise": 4,
+        "source": "The local pinned-runtime recommended-policy result in this report."
+      },
+      {
+        "system": "Windows",
+        "machine": "x64",
+        "assigned": 71,
+        "noise": 9,
+        "source": "Initial native CI run 44473946917; the former >=75/80 assertion failed.",
+        "run_url": "https://github.com/ajorge2/context-saver/actions/runs/44473946917",
+        "commit": "d26163a"
+      }
+    ],
+    "contract": "This fixture verifies guarded native single-root selection, support at or above the actual native minimum, unchanged native labels and assigned strengths, and zero confidence for noise. It does not define a portable exact accepted/noise count.",
+    "quality_gates": "Exact recovery, purity and complete coverage remain required for the defined separated three-family and imbalanced five-family fixtures.",
+    "scope": "These are observed platform differences, not a completed all-platform release claim. The reproduction command regenerates local parameter evidence; this CI observation is a separately recorded historical result."
+  },
   "policies": {
     "old": "min_cluster_size=2; min_samples=1",
     "sqrt_proposed": "min_cluster_size=max(2,ceil(sqrt(n))); min_samples=max(1,min(10,ceil(sqrt(n)/2)))",

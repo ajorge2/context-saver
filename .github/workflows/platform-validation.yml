@@ -83,8 +83,37 @@ jobs:
       - name: Install Windows terminal adapter
         if: runner.os == 'Windows'
         run: uv pip install --system pywinpty==3.0.2
+      - name: Configure bounded Ubuntu package downloads
+        if: runner.os == 'Linux' && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+        shell: bash
+        run: |
+          # Only the disposable runner's regional Ubuntu mirror changes;
+          # official repositories and Playwright's required dependency install remain enabled.
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          regional = re.compile(r"https?://[a-z0-9-]+\.ec2\.archive\.ubuntu\.com/ubuntu(?=/|\s|$)")
+          paths = [Path("/etc/apt/sources.list"), Path("/etc/apt/apt-mirrors.txt")]
+          paths += list(Path("/etc/apt/sources.list.d").glob("*.list"))
+          paths += list(Path("/etc/apt/sources.list.d").glob("*.sources"))
+          replacements = 0
+          for path in paths:
+              if path.is_file():
+                  text, count = regional.subn("https://archive.ubuntu.com/ubuntu", path.read_text())
+                  if count:
+                      path.write_text(text)
+                      replacements += count
+          Path("/etc/apt/apt.conf.d/99-context-saver-ci-network").write_text(
+              'Acquire::http::Timeout "20";\n'
+              'Acquire::https::Timeout "20";\n'
+              'Acquire::Retries "1";\n'
+          )
+          print(f"Canonicalized {replacements} regional Ubuntu mirror URL(s).")
+          PY
       - name: Install browser
         if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+        timeout-minutes: ${{ runner.os == 'Linux' && 5 || 30 }}
         working-directory: tests/browser
         run: |
           npm install --ignore-scripts --no-package-lock

@@ -13,8 +13,9 @@ import json
 import math
 import re
 import sqlite3
+import threading
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 from contextlib import closing, contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Iterable, Iterator, Mapping, Sequence
@@ -2106,12 +2107,58 @@ def _source_preview_title(text: str) -> str:
     return re.sub(r"^(USER|ASSISTANT|SYSTEM):\s*", "", first_line, flags=re.IGNORECASE)[:120] or "Conversation topic"
 
 
+_SCOPED_TITLE_CACHE_LIMIT = 256
+_SCOPED_TOPIC_TITLES: OrderedDict[tuple[str, str], str] = OrderedDict()
+_SCOPED_TITLE_LOCK = threading.Lock()
+
+
+class _VisibleTopicLabels:
+    """Request-local allowed evidence, with a bounded title-only warm cache."""
+
+    def __init__(self, chunks: Mapping[str, Mapping[str, Any]]) -> None:
+        self.rows = {
+            chunk_id: {"id": chunk_id, "text": str(chunk.get("preview") or "")}
+            for chunk_id, chunk in sorted(chunks.items())
+        }
+        digest = hashlib.sha256()
+        for row in self.rows.values():
+            digest.update(json.dumps([row["id"], row["text"]], separators=(",", ":")).encode())
+        self.context = digest.hexdigest()
+        self.background: labels.LabelBackground | None = None
+        self.titles: dict[frozenset[str], str] = {}
+
+    def title(self, member_ids: set[str]) -> str:
+        members = frozenset(chunk_id for chunk_id in member_ids if chunk_id in self.rows)
+        if not members:
+            return "Conversation topic"
+        if members in self.titles:
+            return self.titles[members]
+        member_digest = _hash(json.dumps(sorted(members), separators=(",", ":")))
+        key = (self.context, member_digest)
+        with _SCOPED_TITLE_LOCK:
+            title = _SCOPED_TOPIC_TITLES.get(key)
+            if title is not None:
+                _SCOPED_TOPIC_TITLES.move_to_end(key)
+        if title is None:
+            if self.background is None:
+                self.background = labels.build_background(list(self.rows.values()))
+            title = labels.representation([self.rows[chunk_id] for chunk_id in sorted(members)], self.background)[0]
+            with _SCOPED_TITLE_LOCK:
+                _SCOPED_TOPIC_TITLES[key] = title
+                _SCOPED_TOPIC_TITLES.move_to_end(key)
+                while len(_SCOPED_TOPIC_TITLES) > _SCOPED_TITLE_CACHE_LIMIT:
+                    _SCOPED_TOPIC_TITLES.popitem(last=False)
+        self.titles[members] = title
+        return title
+
+
 def _visible_topic_title(
     title: str, member_ids: set[str], chunks: Mapping[str, Mapping[str, Any]], restricted: bool,
+    visible_labels: _VisibleTopicLabels | None = None,
 ) -> str:
     if not restricted:
         return title
-    return _source_preview_title(str(chunks[min(member_ids)]["preview"]))
+    return (visible_labels or _VisibleTopicLabels(chunks)).title(member_ids)
 
 
 def _explorer_message_options(
@@ -2243,6 +2290,7 @@ def project_explorer_payload(
 
     layers = {key: [] for key in empty_layers}
     restricted = scope.restricts_chats(project_scope)
+    visible_labels = _VisibleTopicLabels(chunks) if restricted else None
     for row in semantic_rows:
         layer_key = EXPLORER_LAYER_KEYS.get(str(row["layer"]))
         if not layer_key:
@@ -2252,7 +2300,7 @@ def project_explorer_payload(
         layers[layer_key].append({
             "id": str(row["id"]),
             "layer": layer_key,
-            "title": _visible_topic_title(str(row["title"]), member_ids, chunks, restricted),
+            "title": _visible_topic_title(str(row["title"]), member_ids, chunks, restricted, visible_labels),
             "confidence": round(float(row["persistence"] or 0), 4),
             "lifecycle": str(row["lifecycle"]),
             "memberCount": len(member_ids),
@@ -2400,6 +2448,8 @@ def project_node_detail(
     if not member_ids:
         db.close()
         return None
+    restricted = scope.restricts_chats(project_scope)
+    visible_labels = _VisibleTopicLabels(chunks) if restricted else None
     if node:
         result = {**dict(node), "kind": "span" if node["layer"] == "span" else "topic"}
         restricted = scope.restricts_chats(project_scope)
@@ -2408,7 +2458,7 @@ def project_node_detail(
                 result.pop(key, None)
         else:
             result["keywords"] = _json_list(result.get("keywords"))
-        result["title"] = _visible_topic_title(result["title"], member_ids, chunks, restricted)
+        result["title"] = _visible_topic_title(result["title"], member_ids, chunks, restricted, visible_labels)
         result["parents"] = [dict(row) for row in db.execute(
             """SELECT n.id, n.layer, n.title, e.coverage FROM semantic_edges e
                JOIN semantic_nodes n ON n.id=e.parent_id
@@ -2423,7 +2473,7 @@ def project_node_detail(
         ) if row["id"] in node_chunks]
         for relation in (*result["parents"], *result["children"]):
             relation["title"] = _visible_topic_title(
-                relation["title"], node_chunks[relation["id"]], chunks, restricted,
+                relation["title"], node_chunks[relation["id"]], chunks, restricted, visible_labels,
             )
     else:
         text = str(chunk["text"] or "")
@@ -2446,7 +2496,7 @@ def project_node_detail(
         }
         for parent in result["parents"]:
             parent["title"] = _visible_topic_title(
-                parent["title"], node_chunks[parent["id"]], chunks, scope.restricts_chats(project_scope),
+                parent["title"], node_chunks[parent["id"]], chunks, restricted, visible_labels,
             )
     result["member_count"] = len(member_ids)
     result["message_count"], result["source_chat_count"] = _evidence_counts(chunks[item_id] for item_id in member_ids)
@@ -2493,6 +2543,7 @@ def project_tree_payload(
     nodes = [{"id": root_id, "thread_id": project_id, "kind": "root", "title": title, "summary": "Project-wide Context Saver index.", "confidence": 1.0}]
     chunks, _, _, node_chunks = _explorer_evidence(db, project_id, project_scope) if project_scope is not None else ({}, {}, {}, {})
     restricted = scope.restricts_chats(project_scope)
+    visible_labels = _VisibleTopicLabels(chunks) if restricted else None
     semantic = [dict(row) for row in db.execute("SELECT * FROM semantic_nodes WHERE project_id = ? AND lifecycle != 'retired'", (project_id,))]
     if project_scope is not None:
         semantic = [node for node in semantic if node["id"] in node_chunks]
@@ -2501,7 +2552,7 @@ def project_tree_payload(
         nodes.append({
             "id": node["id"], "thread_id": project_id,
             "kind": "span" if node["layer"] == "span" else "topic",
-            "title": _visible_topic_title(node["title"], node_chunks.get(node["id"], set()), chunks, restricted),
+            "title": _visible_topic_title(node["title"], node_chunks.get(node["id"], set()), chunks, restricted, visible_labels),
             "summary": "" if restricted else node["summary"],
             "confidence": node["persistence"] or 0.0, "layer": node["layer"],
         })

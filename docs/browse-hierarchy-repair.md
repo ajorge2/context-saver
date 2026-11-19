@@ -32,6 +32,8 @@ Names use short phrases supported across the whole cluster, discounted against t
 
 A prohibition cannot become an affirmative action label. Negated clauses are excluded while independent topic statements remain available. If no sufficiently specific phrase survives, the label stays neutral. A structural parent containing one child preserves its useful name. These are deterministic phrase heuristics, not generated semantic summaries; exact source messages remain available in the metadata dialog. [Naming regressions](../tests/test_cluster_labels.py)
 
+When a connection permits only selected chats, a stored topic name can contain words from an excluded chat. The presentation layer instead names each topic from all permitted member previews, sharing one lazy background and deduplicating identical member sets across layers. A bounded 256-entry cache stores only titles and fingerprint keys; scope, preview or membership changes invalidate reuse. Later message pages do not repeat phrase extraction. The scoped API regressions check cards, metadata relations and tree responses, hidden-name sentinels, invalidation, bounded cache size and extraction counts over 10,000 synthetic rows. [Scoped-name regressions](../tests/test_visible_cluster_labels.py)
+
 ## Refresh one existing project
 
 Attach Context Saver and ask **Refresh Context Saver topics**. Preparation runs first, then the verified installed package refreshes the requested project. For a repository checkout, run from its root:
