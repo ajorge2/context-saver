@@ -1,5 +1,23 @@
 # Native platform validation
 
+## Version 0.1.24 — card-modal and arrow recovery
+
+The [full viewer run](https://github.com/ajorge2/context-saver/actions/runs/44490828625) validated application source `939f4819dee7723978db735c0b91caea9cd0cbc5`. Linux and macOS passed five Node checks and all 61 Chromium scenarios. Windows passed five Node checks and 60 browser scenarios; one interruption fixture sampled its precondition after scrolling had already completed. The [focused Windows follow-up](https://github.com/ajorge2/context-saver/actions/runs/44492642956) passed all twelve modal/navigation cases and five Node checks at `e0afc6ff47e7c7362f4f816ccdac0f442f65100f`. Plugin files are byte-identical between those commits.
+
+| Platform | Node checks | Viewer scenarios | Result |
+|---|---:|---:|---|
+| Ubuntu 24.04 x86-64 | 5 | 61 | Passed in the full viewer run |
+| macOS 15 arm64 | 5 | 61 | Passed in the full viewer run |
+| Windows Server 2025 x64 | 5 | 61 covered across full run and focused follow-up | Passed |
+
+The interruption fixture now arms a one-shot fault before clicking, measures an actual pre-halfway position and cancels it, then checks destination recovery and a real return-arrow action. This removes a cross-process timing assumption while retaining its setup and final assertions. The other eleven navigation cases continue to use real smooth scrolling. [Navigation contract and regression cases](viewer-navigation.md#recovering-arrows-after-inspecting-a-card)
+
+Three failures were reproduced against the previous viewer: a 320-pixel offset after resizing with metadata open, a 36-pixel hidden-viewport scroll after focus, and current arrows permanently faded after an interrupted transition. The live desktop viewer also reproduced the focus offset. With the fix, that same card closes with zero nested viewport scroll, an aligned slide and two usable arrows; resize and down/up navigation were verified at the existing browser zoom.
+
+A local combined Python run passed 302 methods with two Windows-only skips in 59.893 seconds. The local viewer checks passed five Node checks and all 61 browser scenarios across the combined run and focused interaction-fixture rechecks. The twelve final navigation cases also passed together in 52.4 seconds after the portable interruption fixture update.
+
+These are presentation-only validation lanes. Backend, embedding, installation and host-trust code is unchanged from the complete 0.1.23 validation below, apart from version metadata. The `viewer-ui` mode runs the entire Node/Chromium suite on all three native OSes, including real HTTP/SQLite fixtures. The `viewer-windows` diagnostic mode repeats the mocked navigation suite on Windows without installing unrelated host/model dependencies. All fixtures use synthetic data and disposable state.
+
 ## Version 0.1.23 — explicit current-chat controls
 
 The [completed isolated native run](https://github.com/ajorge2/context-saver/actions/runs/44485630009) validated source `5d94008f6d53dd935bf89af220f6f937a08efd9a` on all three platforms. The same packaged off/on/status controls are exposed through MCP, the real CLI, and the installed skill. Successful activation and disconnection clearly report ON and OFF; the README puts the controls alongside setup. [User commands and control contract](chat-controls.md)

@@ -39,3 +39,17 @@ Pending search keeps its loader and navigation guards when the mode changes. Man
 The final application passed 264 Python methods, five Node checks and 49 Chromium scenarios per platform on macOS, Linux and Windows. Linux and macOS skip two Windows-only methods. Installed-host and trust checks also passed, with a diagnostic-only Windows follow-up completing the previously cancelled startup probe. [Exact runs and scopes](platform-validation.md#version-0122--project-defaults-and-messages-only-navigation)
 
 The final local combined run also passed 267 Python methods (two Windows-only skips), including the added failure-diagnostic cases.
+
+## Recovering arrows after inspecting a card
+
+A card belongs to the slide where it was opened. Opening its details cancels a pending slide transition and aligns that source slide; closing restores it while the same navigation epoch still owns the action. A newer explicit route or mode change wins over an older restoration.
+
+The fixed page, presentation viewport and individual slides use `overflow: clip`. They clip painting without becoming scroll containers that browser focus can move independently from `window.scrollY`. Card grids and modal content retain their own scrolling.
+
+Arrow navigation fades its source for 60 milliseconds before starting smooth scrolling. Reduced motion aligns immediately. A short scroll-idle reconciliation finishes interrupted movement and restores the destination's arrows, including when cancellation never changed the active index. Resizing preserves the pending destination or current slide. Geometry uses fractional bounding positions so browser zoom does not accumulate rounded offsets.
+
+The [modal navigation regressions](../tests/browser/viewer-modal-navigation.spec.js) cover Escape, Done, backdrop dismissal, incoming and interrupted transitions, scrolling grids, resize, messages-only navigation, latest-action precedence and a secondary viewport scroll. Negative controls reproduced a 320-pixel resize offset, a 36-pixel hidden-container offset and permanently faded arrows on the old version.
+
+Interaction fixtures navigate to a slide before using its controls. They also wait for loading after a search submission, because navigation is intentionally disabled during loading. The earlier mode-change alignment fix remains covered by its own scenarios.
+
+Version 0.1.24 completed the full viewer matrix on macOS/Linux and the full-plus-focused Windows verification. [Exact execution scope and artifacts](platform-validation.md#version-0124--card-modal-and-arrow-recovery).
