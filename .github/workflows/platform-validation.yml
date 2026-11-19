@@ -9,14 +9,14 @@ on:
         description: Validation scope
         type: choice
         default: full
-        options: [full, host-trust, windows-trust, viewer-ui]
+        options: [full, host-trust, windows-trust, viewer-ui, viewer-windows]
 
 permissions:
   contents: read
 
 jobs:
   embedding-diagnostics:
-    if: inputs.focus != 'viewer-ui' && !contains(github.event.head_commit.message, '[viewer-ui]') && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+    if: inputs.focus != 'viewer-windows' && !contains(github.event.head_commit.message, '[viewer-windows]') && inputs.focus != 'viewer-ui' && !contains(github.event.head_commit.message, '[viewer-ui]') && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
     name: Embeddings ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -55,12 +55,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((inputs.focus != 'viewer-ui' && !contains(github.event.head_commit.message, '[viewer-ui]') && (inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '[windows-trust]'))) && '["windows-2025"]' || '["ubuntu-24.04","windows-2025","macos-15"]') }}
+        os: ${{ fromJSON((inputs.focus == 'viewer-windows' || contains(github.event.head_commit.message, '[viewer-windows]') || (inputs.focus != 'viewer-ui' && !contains(github.event.head_commit.message, '[viewer-ui]') && (inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '[windows-trust]')))) && '["windows-2025"]' || '["ubuntu-24.04","windows-2025","macos-15"]') }}
     env:
-      # Presentation-only validation still runs every Node/Chromium case on all
-      # three OSes, including real HTTP/SQLite fixtures. It makes no claim to
-      # repeat unchanged model, ingestion or native host/trust acceptance.
-      VIEWER_UI_ONLY: ${{ inputs.focus == 'viewer-ui' || contains(github.event.head_commit.message, '[viewer-ui]') }}
+      # viewer-ui runs every Node/Chromium case on all three OSes, including
+      # real HTTP/SQLite fixtures. viewer-windows repeats only the mocked modal
+      # navigation cases and Node checks. Neither repeats model/host acceptance.
+      VIEWER_WINDOWS_ONLY: ${{ inputs.focus == 'viewer-windows' || contains(github.event.head_commit.message, '[viewer-windows]') }}
+      VIEWER_UI_ONLY: ${{ inputs.focus == 'viewer-ui' || contains(github.event.head_commit.message, '[viewer-ui]') || inputs.focus == 'viewer-windows' || contains(github.event.head_commit.message, '[viewer-windows]') }}
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
       UV_PYTHON: "3.12"
@@ -72,15 +73,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        if: env.VIEWER_WINDOWS_ONLY != 'true'
         with:
           python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
       - uses: astral-sh/setup-uv@v6
+        if: env.VIEWER_WINDOWS_ONLY != 'true'
         with:
           version: "0.9.5"
       - name: Install pinned test runtime
+        if: env.VIEWER_WINDOWS_ONLY != 'true'
         run: uv pip install --system mcp==1.26.0 fastembed==0.9.1 usearch==2.26.6 umap-learn==0.5.12 hdbscan==0.8.44 onnx==1.23.2
       - name: Install native coding hosts
         if: env.VIEWER_UI_ONLY != 'true'
@@ -133,7 +137,7 @@ jobs:
           python -m unittest discover -s tests -p test_terminal_arguments.py -v
           python -m unittest discover -s tests -p test_native_host_diagnostics.py -v
       - name: Run browser regression tests
-        if: always() && (env.VIEWER_UI_ONLY == 'true' || (inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')))
+        if: always() && env.VIEWER_WINDOWS_ONLY != 'true' && (env.VIEWER_UI_ONLY == 'true' || (inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')))
         # Includes the real-animation interruption and repeated modal cases.
         timeout-minutes: 8
         working-directory: tests/browser
@@ -142,6 +146,15 @@ jobs:
         run: |
           npm test
           npm run test:e2e -- --reporter=list,json
+      - name: Run Windows modal navigation regressions
+        if: always() && env.VIEWER_WINDOWS_ONLY == 'true'
+        timeout-minutes: 5
+        working-directory: tests/browser
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/test-reports/browser-results.json
+        run: |
+          npm test
+          npm run test:e2e -- viewer-modal-navigation.spec.js --reporter=list,json
       - name: Run installed host acceptance
         if: always() && env.VIEWER_UI_ONLY != 'true'
         timeout-minutes: 5

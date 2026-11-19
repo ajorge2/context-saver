@@ -181,21 +181,34 @@ test('messages-only metadata close preserves the direct return arrow to Welcome'
   expect(errors).toEqual([]);
 });
 
-test('a native scroll cancelled before halfway settles its intended slide without a modal', async ({ page }) => {
+test('an interrupted scroll request settles its intended slide without a modal', async ({ page }) => {
   const errors = await boot(page);
   await navigate(page, 2);
-  await down(page, 2).click();
-  const cancellation = await page.evaluate(async () => {
-    const source = document.querySelector('[data-section="2"]').offsetTop;
-    const target = document.querySelector('[data-section="3"]').offsetTop;
-    const deadline = performance.now() + 2000;
-    while (scrollY <= source + 2 && performance.now() < deadline) {
-      await new Promise(requestAnimationFrame);
-    }
-    const before = scrollY;
-    window.scrollTo({ top: source + 1, behavior: 'instant' });
-    return { source, target, before };
+  // Arm before the click: a fast native animation can already be finished by
+  // the time Playwright returns from clicking. Inject one precise cancellation
+  // at the browser request boundary, then restore normal scrolling immediately.
+  await page.evaluate(() => {
+    const source = document.querySelector('[data-section="2"]').getBoundingClientRect().top + scrollY;
+    const target = document.querySelector('[data-section="3"]').getBoundingClientRect().top + scrollY;
+    const original = window.scrollTo;
+    window.__interruptedNavigation = null;
+    window.scrollTo = function (...args) {
+      const options = args[0];
+      if (options && typeof options === 'object' && options.behavior === 'smooth'
+          && Math.abs(options.top - target) < 1) {
+        window.scrollTo = original;
+        original.call(window, { top: source + (target - source) / 4, behavior: 'instant' });
+        const before = scrollY;
+        original.call(window, { top: source + 1, behavior: 'instant' });
+        window.__interruptedNavigation = { source, target, before };
+        return;
+      }
+      return original.apply(window, args);
+    };
   });
+  await down(page, 2).click();
+  await expect.poll(() => page.evaluate(() => window.__interruptedNavigation)).not.toBeNull();
+  const cancellation = await page.evaluate(() => window.__interruptedNavigation);
   expect(cancellation.before).toBeGreaterThan(cancellation.source);
   expect(cancellation.before).toBeLessThan((cancellation.source + cancellation.target) / 2);
   await expectAlignedAndNavigable(page, 3);
