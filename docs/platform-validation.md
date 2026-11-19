@@ -1,5 +1,23 @@
 # Native platform validation
 
+## Version 0.1.22 — project defaults and messages-only navigation
+
+All required gates passed for the project-recency and two-slide viewer changes. The [full feature run](https://github.com/ajorge2/context-saver/actions/runs/44480063771) validated application source `5830a0e1ec0bcb8f11c5acd7641654f2ba04fbbb`. The [focused Windows follow-up](https://github.com/ajorge2/context-saver/actions/runs/44482756860) completed its installed-host gate at `264fc6b73fb648bcdcf0b98741a8526e23bf3d40`; plugin files are byte-identical between those commits.
+
+| Platform | Python methods | Windows-only skips | Node tests | Chromium scenarios | Final installation/trust gates |
+|---|---:|---:|---:|---:|---|
+| Ubuntu 24.04 x86-64 | 264 | 2 | 5 | 49 | Passed |
+| macOS 15 arm64 | 264 | 2 | 5 | 49 | Passed |
+| Windows Server 2025 x64 | 264 | 0 | 5 | 49 | Passed across the full run and focused follow-up |
+
+The added cases cover actual MCP-use ordering, legacy timestamp compatibility, overlapping invocation/completion, concurrent schema upgrades, removal fallback, unavailable/empty projects, hidden routes, filters, drafts, loading and native scroll cancellation. All three embedding lanes and all native trust assertions passed. [Behavior and test links](viewer-navigation.md)
+
+The first Windows installed-host probe reported a cancelled Claude prompt hook and aborted before saving its stream/state. The harness now preserves stdout, stderr, hook outcomes and index diagnostics and waits boundedly for its fixture worker before strict assertions. The production hook commands/timeouts were unchanged, and cancellation still fails the check. The focused run passed both strict hook outcomes, one indexed turn, reconciled staging, both installed MCP servers, all nine Codex trust/upgrade assertions and all three Claude trust assertions. Four terminal and three failure-diagnostic regression cases also passed there. This follow-up took 2 minutes 12 seconds.
+
+A final combined local run, including the three new harness-diagnostic methods, passed all 267 Python methods with two Windows-only skips in 38.554 seconds.
+
+The same disposable-profile and loopback-response isolation described below applies. No personal chat or signed-in model account is used by these native tests.
+
 ## Version 0.1.21 — complete native matrix
 
 The [completed native run](https://github.com/ajorge2/context-saver/actions/runs/44475727933) validated source commit `4c1e33bc7434b2b3237bc0818c60d94ef3c5e150` on all three platforms. This includes full-history browsing, hierarchy preservation, direct UMAP/HDBSCAN clustering and scoped topic names. The workflow ran from 06:55:33 to 07:04:16 UTC on November 19, 2026.

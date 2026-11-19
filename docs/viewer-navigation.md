@@ -33,3 +33,9 @@ The toggle does not submit a draft. Hover previews its placeholder only; activat
 Pending search keeps its loader and navigation guards when the mode changes. Manual page scrolling stays blocked outside internal scrollable controls; keyboard-activated buttons remain usable. Normal transitions use the existing fade and scroll animation, while reduced-motion transitions are immediate. Reload returns to Welcome and the normal five-slide context mode, then selects the most recently used available project.
 
 [Messages-only browser scenarios](../tests/browser/viewer-messages-mode.spec.js) cover both route sequences, hidden focus/target rejection, filter clearing, draft/query/message preservation, loading, reload and interrupted smooth scrolling. These targeted scenarios describe the new contracts; the release validation record separately reports completed full-suite and native-platform runs.
+
+## Completed validation
+
+The final application passed 264 Python methods, five Node checks and 49 Chromium scenarios per platform on macOS, Linux and Windows. Linux and macOS skip two Windows-only methods. Installed-host and trust checks also passed, with a diagnostic-only Windows follow-up completing the previously cancelled startup probe. [Exact runs and scopes](platform-validation.md#version-0122--project-defaults-and-messages-only-navigation)
+
+The final local combined run also passed 267 Python methods (two Windows-only skips), including the added failure-diagnostic cases.
