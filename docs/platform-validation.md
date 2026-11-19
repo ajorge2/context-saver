@@ -1,5 +1,21 @@
 # Native platform validation
 
+## Version 0.1.23 — explicit current-chat controls
+
+The [completed isolated native run](https://github.com/ajorge2/context-saver/actions/runs/44485630009) validated source `5d94008f6d53dd935bf89af220f6f937a08efd9a` on all three platforms. The same packaged off/on/status controls are exposed through MCP, the real CLI, and the installed skill. Successful activation and disconnection clearly report ON and OFF; the README puts the controls alongside setup. [User commands and control contract](chat-controls.md)
+
+| Platform | Python methods | Windows-only skips | Node tests | Chromium scenarios | Installed controls and trust/upgrade |
+|---|---:|---:|---:|---:|---|
+| Ubuntu 24.04 x86-64 | 302 | 2 | 5 | 49 | Passed |
+| macOS 15 arm64 | 302 | 2 | 5 | 49 | Passed |
+| Windows Server 2025 x64 | 302 | 0 | 5 | 49 | Passed |
+
+Both installed hosts connected their MCP servers and passed off/status, reopen, preparation/recall denial and all three quiet capture-hook checks. Every platform passed all nine Codex trust/upgrade assertions, all three Claude workspace-trust assertions, and both strict Claude prompt/Stop hook outcomes. The ordinary synthetic completed turn still indexed once, reconciled staging and settled without active work. All three embedding diagnostic lanes passed.
+
+Thirty-five new Python methods cover controls before activation, idempotence, exact identity, sibling isolation, delayed prompts, in-flight off/on races, failed scope writes, inactivity-policy status, transcript replacement/truncation, resume cutoffs and older cached writers. Independent review reproduced recall without caller identity, a newer-sibling preparation error, replayed prompt staging after resume and a partial-write UI mismatch; dedicated regressions now cover each. Database publication guards retain the capture boundary for older loaded hooks/workers.
+
+The final combined local run passed 302 methods with two Windows-only skips in 35.631 seconds. Local browser verification also passed all 49 scenarios after correcting the fixture's Python path and separating overlapping trace output; the native matrix above ran each platform's complete browser suite successfully. No signed-in model account or personal chat is used: host tests have disposable profiles, synthetic histories and loopback answers, while embedding tests execute the native numerical runtime.
+
 ## Version 0.1.22 — project defaults and messages-only navigation
 
 All required gates passed for the project-recency and two-slide viewer changes. The [full feature run](https://github.com/ajorge2/context-saver/actions/runs/44480063771) validated application source `5830a0e1ec0bcb8f11c5acd7641654f2ba04fbbb`. The [focused Windows follow-up](https://github.com/ajorge2/context-saver/actions/runs/44482756860) completed its installed-host gate at `264fc6b73fb648bcdcf0b98741a8526e23bf3d40`; plugin files are byte-identical between those commits.

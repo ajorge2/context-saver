@@ -2,6 +2,8 @@
 
 Context Saver is a **Codex and Claude Code plugin for macOS, Linux, and Windows** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
 
+**You control the connection:** send **Context Saver off** to disconnect this chat while keeping saved context, **Context Saver on** to reconnect, or **Context Saver status** to check. Successful activation and disconnection clearly confirm **ON** and **OFF**.
+
 [Install the plugin](#install) · [Turn it off or on](#turn-it-off-or-on) · [Open the viewer](#open-the-viewer) · [Refresh existing topics](#refresh-existing-topics)
 
 <a id="install-on-macos"></a>
