@@ -312,6 +312,8 @@ function initializeNodeDetailModal() {
   const closeButtons = overlay.querySelectorAll("[data-node-detail-close], [data-node-detail-done]");
   let returnFocus = null;
   let activeRequest = null;
+  let originSection = null;
+  let originEpoch = null;
 
   const close = () => {
     activeRequest?.abort();
@@ -324,6 +326,11 @@ function initializeNodeDetailModal() {
     const trigger = returnFocus;
     returnFocus = null;
     trigger?.focus({ preventScroll: true });
+    if (originSection !== null && originEpoch === navigationEpoch) {
+      settleSlide(originSection);
+    }
+    originSection = null;
+    originEpoch = null;
   };
 
   const readableDate = (value) => {
@@ -442,6 +449,9 @@ function initializeNodeDetailModal() {
       const request = new AbortController();
       activeRequest = request;
       returnFocus = trigger || document.activeElement;
+      const section = returnFocus?.closest?.('[data-section]');
+      originSection = section ? Number(section.dataset.section) : null;
+      originEpoch = originSection !== null ? settleSlide(originSection) : null;
       title.textContent = node.title;
       layer.textContent = explorerLayerLabels[node.layer] || "Context node";
       content.innerHTML = '<div class="node-detail-loading"><i aria-hidden="true"></i><span>Loading conversation details…</span></div>';
@@ -1450,6 +1460,9 @@ initializeAmbientBackground();
 
 let activeSection = -1;
 let navigationEpoch = 0;
+let navigationTarget = null;
+let navigationStartTimer = 0;
+let navigationSettleTimer = 0;
 let ticking = false;
 let scrollVisualSettleTimer = 0;
 let lastVisualScrollY = window.scrollY;
@@ -1468,6 +1481,45 @@ function setActiveSection(index) {
 
 function syncVisualTracks() {
   sectionsTrack.style.transform = `translate3d(0, ${-window.scrollY}px, 0)`;
+}
+
+function cancelSlideNavigation() {
+  window.clearTimeout(navigationStartTimer);
+  window.clearTimeout(navigationSettleTimer);
+  navigationTarget = null;
+  return ++navigationEpoch;
+}
+
+function sectionScrollTop(section) {
+  // Preserve fractional layout pixels, including desktop browser zoom.
+  return section.getBoundingClientRect().top + window.scrollY;
+}
+
+function alignSlide(index, epoch) {
+  const section = sections[index];
+  if (epoch !== navigationEpoch || !section || section.hidden) return;
+  syncVisualTracks();
+  window.scrollTo({ top: sectionScrollTop(section), behavior: 'instant' });
+  updateScrollPosition();
+  // A cancelled scroll may never have changed the active index.
+  section.querySelectorAll('.slide-up-button').forEach((button) => button.classList.remove('is-leaving'));
+}
+
+function settleSlide(index) {
+  if (!sections[index] || sections[index].hidden) return null;
+  const epoch = cancelSlideNavigation();
+  alignSlide(index, epoch);
+  requestAnimationFrame(() => alignSlide(index, epoch));
+  return epoch;
+}
+
+function scheduleNavigationSettle() {
+  if (navigationTarget === null) return;
+  const epoch = navigationEpoch;
+  window.clearTimeout(navigationSettleTimer);
+  navigationSettleTimer = window.setTimeout(() => {
+    if (epoch === navigationEpoch && navigationTarget !== null) settleSlide(navigationTarget);
+  }, 180);
 }
 
 function updateScrollPosition() {
@@ -1491,14 +1543,25 @@ function updateScrollPosition() {
   setActiveSection(nearestIndex);
 }
 
-function scrollToSection(index) {
+function scrollToSection(index, { fade = false } = {}) {
   const section = sections[index];
   if (!section || section.hidden) return;
-  navigationEpoch += 1;
-  window.scrollTo({
-    top: section.offsetTop,
-    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-  });
+  const epoch = cancelSlideNavigation();
+  if (index === activeSection && Math.abs(section.getBoundingClientRect().top) < 1) {
+    alignSlide(index, epoch);
+    return;
+  }
+  navigationTarget = index;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (fade) sections[activeSection]?.querySelectorAll('.slide-up-button').forEach((button) => button.classList.add('is-leaving'));
+  const beginScroll = () => {
+    if (epoch !== navigationEpoch) return;
+    syncVisualTracks();
+    window.scrollTo({ top: sectionScrollTop(section), behavior: reducedMotion ? 'instant' : 'smooth' });
+    scheduleNavigationSettle();
+  };
+  if (fade && !reducedMotion) navigationStartTimer = window.setTimeout(beginScroll, 60);
+  else beginScroll();
 }
 
 function syncScrollSpace() {
@@ -1506,7 +1569,7 @@ function syncScrollSpace() {
 }
 
 function syncSlideMode() {
-  const epoch = ++navigationEpoch;
+  const epoch = cancelSlideNavigation();
   const visibleIndices = sections.map((_, index) => index).filter((index) => (
     !messageSearchOnly || index === 0 || index === sections.length - 1
   ));
@@ -1534,8 +1597,7 @@ function syncSlideMode() {
   activeSection = -1;
   const alignDestination = () => {
     if (epoch !== navigationEpoch) return;
-    window.scrollTo({ top: sections[destination].offsetTop, behavior: 'instant' });
-    updateScrollPosition();
+    alignSlide(destination, epoch);
   };
   // Native smooth scrolling can deliver one compositor frame after the mode's
   // layout change. Reconcile after that frame too; a newer navigation wins.
@@ -1546,10 +1608,7 @@ function syncSlideMode() {
 dots.forEach((dot) => dot.addEventListener("click", () => scrollToSection(Number(dot.dataset.sectionIndex))));
 document.querySelectorAll("[data-scroll-to]").forEach((button) => {
   button.addEventListener("click", () => {
-    button.closest("[data-section]")?.querySelectorAll(".slide-up-button").forEach((slideButton) => {
-      slideButton.classList.add("is-leaving");
-    });
-    scrollToSection(Number(button.dataset.scrollTo));
+    scrollToSection(Number(button.dataset.scrollTo), { fade: true });
   });
 });
 
@@ -1587,6 +1646,7 @@ window.addEventListener("keydown", (event) => {
 
 window.addEventListener("scroll", () => {
   syncVisualTracks();
+  scheduleNavigationSettle();
   const scrollY = window.scrollY;
   const direction = Math.sign(scrollY - lastVisualScrollY);
   lastVisualScrollY = scrollY;
@@ -1607,8 +1667,9 @@ window.addEventListener("scroll", () => {
   });
 }, { passive: true });
 window.addEventListener("resize", () => {
+  const destination = navigationTarget ?? (activeSection >= 0 ? activeSection : 0);
   syncScrollSpace();
-  updateScrollPosition();
+  settleSlide(destination);
 }, { passive: true });
 
 syncScrollSpace();

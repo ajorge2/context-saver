@@ -9,14 +9,14 @@ on:
         description: Validation scope
         type: choice
         default: full
-        options: [full, host-trust, windows-trust]
+        options: [full, host-trust, windows-trust, viewer-ui]
 
 permissions:
   contents: read
 
 jobs:
   embedding-diagnostics:
-    if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+    if: inputs.focus != 'viewer-ui' && !contains(github.event.head_commit.message, '[viewer-ui]') && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
     name: Embeddings ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
@@ -55,8 +55,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '[windows-trust]')) && '["windows-2025"]' || '["ubuntu-24.04","windows-2025","macos-15"]') }}
+        os: ${{ fromJSON((inputs.focus != 'viewer-ui' && !contains(github.event.head_commit.message, '[viewer-ui]') && (inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '[windows-trust]'))) && '["windows-2025"]' || '["ubuntu-24.04","windows-2025","macos-15"]') }}
     env:
+      # Presentation-only validation still runs every Node/Chromium case on all
+      # three OSes, including real HTTP/SQLite fixtures. It makes no claim to
+      # repeat unchanged model, ingestion or native host/trust acceptance.
+      VIEWER_UI_ONLY: ${{ inputs.focus == 'viewer-ui' || contains(github.event.head_commit.message, '[viewer-ui]') }}
       PYTHONUTF8: "1"
       PYTHONDONTWRITEBYTECODE: "1"
       UV_PYTHON: "3.12"
@@ -79,12 +83,13 @@ jobs:
       - name: Install pinned test runtime
         run: uv pip install --system mcp==1.26.0 fastembed==0.9.1 usearch==2.26.6 umap-learn==0.5.12 hdbscan==0.8.44 onnx==1.23.2
       - name: Install native coding hosts
+        if: env.VIEWER_UI_ONLY != 'true'
         run: npm install --global @openai/codex@0.157.1 @anthropic-ai/claude-code@2.1.312
       - name: Install Windows terminal adapter
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && env.VIEWER_UI_ONLY != 'true'
         run: uv pip install --system pywinpty==3.0.2
       - name: Configure bounded Ubuntu package downloads
-        if: runner.os == 'Linux' && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+        if: runner.os == 'Linux' && (env.VIEWER_UI_ONLY == 'true' || (inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')))
         shell: bash
         run: |
           # Only the disposable runner's regional Ubuntu mirror changes;
@@ -112,34 +117,37 @@ jobs:
           print(f"Canonicalized {replacements} regional Ubuntu mirror URL(s).")
           PY
       - name: Install browser
-        if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+        if: env.VIEWER_UI_ONLY == 'true' || (inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]'))
         timeout-minutes: ${{ runner.os == 'Linux' && 5 || 30 }}
         working-directory: tests/browser
         run: |
           npm install --ignore-scripts --no-package-lock
           npx playwright install --with-deps chromium
       - name: Run regression and native runtime tests
-        if: inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
+        if: env.VIEWER_UI_ONLY != 'true' && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
         timeout-minutes: 5
         run: python tests/run.py
       - name: Run terminal and host-probe regression tests
-        if: inputs.focus == 'host-trust' || inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '-trust]')
+        if: env.VIEWER_UI_ONLY != 'true' && (inputs.focus == 'host-trust' || inputs.focus == 'windows-trust' || contains(github.event.head_commit.message, '-trust]'))
         run: |
           python -m unittest discover -s tests -p test_terminal_arguments.py -v
           python -m unittest discover -s tests -p test_native_host_diagnostics.py -v
       - name: Run browser regression tests
-        if: always() && inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')
-        timeout-minutes: 6
+        if: always() && (env.VIEWER_UI_ONLY == 'true' || (inputs.focus != 'host-trust' && inputs.focus != 'windows-trust' && !contains(github.event.head_commit.message, '-trust]')))
+        # Includes the real-animation interruption and repeated modal cases.
+        timeout-minutes: 8
         working-directory: tests/browser
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/test-reports/browser-results.json
         run: |
           npm test
-          npm run test:e2e
+          npm run test:e2e -- --reporter=list,json
       - name: Run installed host acceptance
-        if: always()
+        if: always() && env.VIEWER_UI_ONLY != 'true'
         timeout-minutes: 5
         run: python tests/native_hosts.py
       - name: Review native trust and upgrade
-        if: always()
+        if: always() && env.VIEWER_UI_ONLY != 'true'
         timeout-minutes: 8
         run: python tests/native_trust.py
       - name: Save synthetic diagnostics
