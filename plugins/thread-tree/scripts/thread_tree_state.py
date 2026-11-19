@@ -160,6 +160,15 @@ def _initialize_staged_prompts(db: sqlite3.Connection) -> None:
            ON staged_user_prompts(project_id, thread_id, content_hash)
            WHERE synthetic_turn=1 AND state='staged'"""
     )
+    for event, suffix in (("INSERT", "insert"), ("UPDATE OF prompt", "update")):
+        db.execute(f"""CREATE TRIGGER IF NOT EXISTS chat_control_prompt_{suffix}
+            BEFORE {event} ON staged_user_prompts
+            WHEN EXISTS (SELECT 1 FROM chat_plugin_controls c
+                WHERE c.project_id=NEW.project_id AND c.thread_id=NEW.thread_id
+                  AND (c.enabled=0 OR c.capture_after_line>0))
+            BEGIN
+                SELECT RAISE(ABORT, 'Context Saver prompt capture requires a verified post-resume transcript');
+            END""")
 
 
 def initialize_state_schema(db: sqlite3.Connection) -> None:
@@ -352,6 +361,31 @@ def initialize_state_schema(db: sqlite3.Connection) -> None:
             error TEXT,
             PRIMARY KEY(project_id, thread_id)
         );
+
+        CREATE TABLE IF NOT EXISTS chat_plugin_controls (
+            project_id TEXT NOT NULL,
+            thread_id TEXT NOT NULL,
+            enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+            generation INTEGER NOT NULL DEFAULT 1,
+            capture_after_line INTEGER NOT NULL DEFAULT 0,
+            transcript_path TEXT,
+            prefix_hash TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(project_id, thread_id)
+        );
+
+        CREATE TRIGGER IF NOT EXISTS chat_control_capture_boundary
+        BEFORE INSERT ON turn_chunks
+        WHEN EXISTS (
+            SELECT 1 FROM chat_plugin_controls c
+            WHERE c.project_id=NEW.project_id AND c.thread_id=NEW.thread_id
+              AND (c.enabled=0 OR (c.capture_after_line>0 AND (
+                   COALESCE(NEW.line_start,-1)<=c.capture_after_line OR
+                   COALESCE((SELECT t.line_start FROM turn_ingestion t WHERE t.id=NEW.turn_id),-1)<=c.capture_after_line)))
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'Context Saver chat capture is off or outside its resumed window');
+        END;
 
         CREATE INDEX IF NOT EXISTS turn_ingestion_project_state
             ON turn_ingestion(project_id, state, created_at);
@@ -612,6 +646,51 @@ def finish_chat_activation(
     return chat_activation(db, project_id, thread_id) or {}
 
 
+def chat_control(db: sqlite3.Connection, project_id: str, thread_id: str) -> dict[str, Any] | None:
+    row = db.execute(
+        "SELECT * FROM chat_plugin_controls WHERE project_id=? AND thread_id=?",
+        (project_id, thread_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def set_chat_control(
+    db: sqlite3.Connection, project_id: str, thread_id: str, *, enabled: bool,
+    capture_after_line: int = 0, transcript_path: str | None = None,
+    prefix_hash: str | None = None,
+) -> dict[str, Any]:
+    """Persist a chat control independently of whether its project has an index."""
+    previous = chat_control(db, project_id, thread_id)
+    if previous is not None and bool(previous["enabled"]) == enabled:
+        return previous
+    with db:
+        db.execute(
+            """INSERT INTO chat_plugin_controls
+               (project_id,thread_id,enabled,generation,capture_after_line,transcript_path,prefix_hash,updated_at)
+               VALUES (?,?,?,1,?,?,?,?)
+               ON CONFLICT(project_id,thread_id) DO UPDATE SET enabled=excluded.enabled,
+                 generation=chat_plugin_controls.generation+1,
+                 capture_after_line=excluded.capture_after_line,
+                 transcript_path=excluded.transcript_path,prefix_hash=excluded.prefix_hash,
+                 updated_at=excluded.updated_at""",
+            (project_id, thread_id, int(enabled), capture_after_line, transcript_path, prefix_hash, utc_now()),
+        )
+        if not enabled:
+            # Revoke source work without touching published messages. A stale
+            # embedding result cannot own the lease after this transaction.
+            db.execute(
+                """UPDATE turn_ingestion SET state='evicted', lease_token=NULL,
+                   lease_expires_at=NULL, retryable=0,error='Context Saver off',updated_at=?
+                   WHERE project_id=? AND thread_id=? AND state IN ('queued','processing','failed')""",
+                (utc_now(), project_id, thread_id),
+            )
+            db.execute(
+                "DELETE FROM staged_user_prompts WHERE project_id=? AND thread_id=? AND state='staged'",
+                (project_id, thread_id),
+            )
+    return chat_control(db, project_id, thread_id) or {}
+
+
 def stage_user_prompt(
     db: sqlite3.Connection,
     *,
@@ -633,6 +712,12 @@ def stage_user_prompt(
         raise ValueError("thread_id is required")
     if not prompt:
         raise ValueError("prompt is required")
+    control = chat_control(db, project_id, thread_id)
+    if control and (not control["enabled"] or int(control.get("capture_after_line") or 0) > 0):
+        # Prompt hooks have no authoritative transcript line boundary. After
+        # resume they could be late replays of an off-period prompt. Capture
+        # new completed turns from Stop's verified transcript instead.
+        return {"state": "off", "scope_blocked": True}
     now = utc_now()
     content_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     with db:

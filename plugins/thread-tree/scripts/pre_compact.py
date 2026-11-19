@@ -69,7 +69,7 @@ def main() -> int:
                         "Context Saver auto-indexing is active for this project. "
                         f"Preserving about {result.get('approx_tokens', 0):,} conversation tokens "
                         "from turns queued before compaction. "
-                        "Disable it in Settings → Hooks."
+                        "Send Context Saver off to pause it for this chat."
                     ),
                 }
             )
@@ -91,7 +91,7 @@ def main() -> int:
                     "continue": True,
                     "systemMessage": (
                         "Context Saver auto-indexing is active for this project, but this indexing run failed open. "
-                        "A later backfill can recover this window. Disable it in Settings → Hooks."
+                        "A later backfill can recover this window. Send Context Saver off to pause it for this chat."
                     ),
                 }
             )

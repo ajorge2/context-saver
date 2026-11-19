@@ -1,6 +1,6 @@
 {
   "name": "thread-tree",
-  "version": "0.1.22",
+  "version": "0.1.23",
   "description": "Open the Context Saver viewer to browse connected coding chats and recover earlier decisions with their sources.",
   "author": {
     "name": "Andrew Jorge"
@@ -16,7 +16,7 @@
   "interface": {
     "displayName": "Context Saver",
     "shortDescription": "Browse saved project chats",
-    "longDescription": "Open the local viewer to browse topics, search saved messages and manage connected chats. Context Saver also lets the coding agent retrieve original evidence behind earlier project decisions.",
+    "longDescription": "Open the local viewer to browse topics, search saved messages and manage connected chats. Context Saver also lets the coding agent retrieve original evidence behind earlier project decisions. You control each chat: send Context Saver off to pause saving and recall, on to reconnect, or status to check.",
     "developerName": "Andrew Jorge",
     "category": "Productivity",
     "capabilities": [
@@ -25,6 +25,9 @@
     "brandColor": "#17765A",
     "defaultPrompt": [
       "Open Context Saver",
+      "Context Saver off",
+      "Context Saver on",
+      "Context Saver status",
       "Set up Context Saver for this project",
       "Search my saved project context for an earlier decision"
     ],

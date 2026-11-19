@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from contextlib import closing
@@ -83,6 +84,7 @@ def _resolve_current_session(
         thread_id
         or os.environ.get("CODEX_THREAD_ID")
         or os.environ.get("CODEX_SESSION_ID")
+        or os.environ.get("CLAUDE_SESSION_ID")
         or ""
     ).strip() or None
     db = thread_tree.connect_db()
@@ -135,6 +137,144 @@ def _resolve_current_session(
     return observed
 
 
+def _control_session(
+    *, project_root: str | None = None, thread_id: str | None = None,
+) -> dict[str, str] | None:
+    """Resolve only an exact host identity; never act on the latest other chat."""
+    identifier = str(thread_id or os.environ.get("CODEX_THREAD_ID")
+                     or os.environ.get("CODEX_SESSION_ID") or os.environ.get("CLAUDE_SESSION_ID") or "").strip()
+    if not identifier or len(identifier) > 240 or "${" in identifier:
+        return None
+    canonical = str(Path(project_root).expanduser().resolve()) if project_root and project_root.strip() else None
+    with closing(thread_tree.connect_db()) as db:
+        rows = db.execute(
+            "SELECT project_root,thread_id,transcript_path FROM session_observations WHERE thread_id=?",
+            (identifier,),
+        ).fetchall()
+    matches = [dict(row) for row in rows if canonical is None or row["project_root"] == canonical]
+    if len(matches) == 1:
+        return {key: str(value or "") for key, value in matches[0].items()}
+    if len(matches) > 1:
+        return None
+    # Supplying an exact project and chat can disconnect before any transcript
+    # is available. Reconnection validates a transcript before enabling it.
+    if canonical:
+        session = _resolve_current_session(project_root=canonical, thread_id=identifier)
+        return session or {"project_root": canonical, "thread_id": identifier, "transcript_path": ""}
+    session = _resolve_current_session(thread_id=identifier)
+    return session
+
+
+def _control_reply(session: Mapping[str, Any], status: str, *, ok: bool = True,
+                   message: str | None = None, **extra: Any) -> dict[str, Any]:
+    messages = {
+        "off": "Context Saver is OFF for this chat. New messages won’t be saved and saved history won’t be used here. Existing saved context is kept. Send on to reconnect.",
+        "on": "Context Saver is ON for this chat. Saving and history lookup are connected.",
+    }
+    return {"ok": ok, "status": status, "enabled": status == "on", "scope": "chat",
+            "project_root": session.get("project_root"), "thread_id": session.get("thread_id"),
+            "message": message or messages.get(status, "Context Saver is not connected for this chat."), **extra}
+
+
+def _prefix_hash(path: Path, lines: int) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for _ in range(lines):
+            line = handle.readline()
+            if not line:
+                raise ValueError("The chat transcript was shortened; Context Saver remains off.")
+            digest.update(line)
+    return digest.hexdigest()
+
+
+def control_current_chat(
+    action: str, *, project_root: str | None = None, thread_id: str | None = None,
+) -> dict[str, Any]:
+    """Explicit reversible chat switch, separate from destructive disconnection."""
+    if action not in {"off", "on", "status"}:
+        raise ValueError("action must be off, on, or status")
+    session = _control_session(project_root=project_root, thread_id=thread_id)
+    if session is None:
+        return _control_reply({}, "session_unavailable", ok=False,
+            message="Context Saver could not identify this chat safely. Supply the current project and exact chat ID; no connection was changed.")
+    canonical, identifier = session["project_root"], session["thread_id"]
+    project_id = state.project_id_for(canonical)
+    with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+        control = state.chat_control(db, project_id, identifier)
+        config = thread_tree.load_scope_config()
+        selected = scope.selected_project(config, canonical)
+        project_row = db.execute("SELECT updated_at FROM projects WHERE id=?", (project_id,)).fetchone()
+        decision = scope.scope_decision(config, canonical, identifier,
+            last_activity_at=str(project_row["updated_at"] or "") if project_row else None)
+        if action == "status":
+            enabled = not (control and not control["enabled"]) and decision["active"]
+            return _control_reply(session, "on" if enabled else "off", reason=decision["reason"])
+        if config.get("loadError"):
+            return _control_reply(session, "off", ok=False, message="Context Saver could not read its connection settings. No connection was changed.")
+        if action == "off":
+            state.set_chat_control(db, project_id, identifier, enabled=False,
+                capture_after_line=int(control["capture_after_line"]) if control else 0,
+                transcript_path=control.get("transcript_path") if control else None,
+                prefix_hash=control.get("prefix_hash") if control else None)
+            if selected is not None and identifier not in selected.get("excludedChatIds", []):
+                selected["excludedChatIds"] = [*selected.get("excludedChatIds", []), identifier]
+                thread_tree.save_scope_config(config)
+            return _control_reply(session, "off")
+        if config.get("paused") or (selected and (
+            selected.get("paused") or selected.get("disconnectPending")
+            or identifier in selected.get("pendingDisconnectChatIds", [])
+        )):
+            return _control_reply(session, "paused", ok=False,
+                message="Context Saver is still off for this chat. Resume its project or finish the pending disconnection in Connections before reconnecting.")
+        resume_data = None
+        if control and not control["enabled"]:
+            path = Path(session.get("transcript_path") or "").expanduser().resolve()
+            if not session.get("transcript_path") or not path.is_file():
+                return _control_reply(session, "transcript_unavailable", ok=False,
+                    message="Context Saver remains OFF. Its current chat transcript is unavailable; retry on from this chat after the host supplies it.")
+            parsed = thread_tree.parse_transcript_lines(path)
+            if str(parsed.get("thread_id") or "") != identifier or str(Path(str(parsed.get("cwd") or "")).expanduser().resolve()) != canonical:
+                return _control_reply(session, "transcript_unavailable", ok=False,
+                    message="Context Saver remains OFF because the transcript does not match this chat and project.")
+            old_cutoff = int(control.get("capture_after_line") or 0)
+            try:
+                if old_cutoff and _prefix_hash(path, old_cutoff) != control.get("prefix_hash"):
+                    raise ValueError("The chat transcript was replaced; Context Saver remains off.")
+                cutoff = int(parsed.get("last_line") or 0)
+                prefix = _prefix_hash(path, cutoff)
+            except (OSError, ValueError) as error:
+                return _control_reply(session, "transcript_unavailable", ok=False, message=str(error))
+            resume_data = {"capture_after_line": cutoff, "transcript_path": str(path), "prefix_hash": prefix}
+        _activate_scope_for_chat_locked(canonical, identifier)
+        # Keep the durable off guard until the scope file is safely written.
+        # A failed on never gives ordinary prepare permission to reconnect.
+        if resume_data is not None:
+            control = state.set_chat_control(db, project_id, identifier, enabled=True, **resume_data)
+        enabled_generation = int(control["generation"]) if control else 0
+    try:
+        preparation = prepare_current_chat(project_root=canonical, thread_id=identifier)
+    except Exception:
+        # Do not echo transcript/provider exceptions into the control reply.
+        # A failed reconnect must leave the durable switch off.
+        preparation = {"status": "failed", "reason": "preparation_failed"}
+    if preparation.get("status") != "ready":
+        with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+            current = state.chat_control(db, project_id, identifier)
+            if (int(current["generation"]) if current else 0) == enabled_generation:
+                state.set_chat_control(db, project_id, identifier, enabled=False,
+                    capture_after_line=int(current.get("capture_after_line") or 0) if current else 0,
+                    transcript_path=current.get("transcript_path") if current else None,
+                    prefix_hash=current.get("prefix_hash") if current else None)
+                config = thread_tree.load_scope_config()
+                selected = scope.selected_project(config, canonical)
+                if selected is not None and identifier not in selected.get("excludedChatIds", []):
+                    selected["excludedChatIds"] = [*selected.get("excludedChatIds", []), identifier]
+                    thread_tree.save_scope_config(config)
+        return _control_reply(session, "off", ok=False, preparation=preparation,
+            message="Context Saver remains OFF because it could not finish reconnecting this chat. Retry on.")
+    return _control_reply(session, "on", preparation=preparation)
+
+
 def prepare_current_chat(
     *,
     project_root: str | None = None,
@@ -143,8 +283,23 @@ def prepare_current_chat(
     """Initialize the current chat once, then return immediately on later calls."""
 
     invoked_at = state.plugin_invocation_time()
-    session = _resolve_current_session(project_root=project_root, thread_id=thread_id)
+    exact_id = str(thread_id or os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+                   or os.environ.get("CLAUDE_SESSION_ID") or "").strip()
+    if not exact_id:
+        with closing(thread_tree.connect_db()) as db:
+            if db.execute("SELECT 1 FROM chat_plugin_controls WHERE enabled=0 LIMIT 1").fetchone():
+                return {**_control_reply({}, "session_unavailable", ok=False,
+                    message="Context Saver needs this chat's exact ID before preparing it because a chat is switched off. No connection was changed."),
+                    "first_invocation": False, "continue_with_user_request": True}
+    session = _resolve_current_session(project_root=project_root, thread_id=exact_id or None)
     if session is None:
+        exact = _control_session(project_root=project_root, thread_id=thread_id)
+        if exact:
+            with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+                control = state.chat_control(db, state.project_id_for(exact["project_root"]), exact["thread_id"])
+                if control and not control["enabled"]:
+                    return {**_control_reply(exact, "off"), "first_invocation": False,
+                            "continue_with_user_request": True}
         return {
             "status": "session_unavailable",
             "first_invocation": False,
@@ -155,8 +310,13 @@ def prepare_current_chat(
     canonical = session["project_root"]
     identifier = session["thread_id"]
     project_id = state.project_id_for(canonical)
-    _activate_scope_for_chat(canonical, identifier)
     with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+        control = state.chat_control(db, project_id, identifier)
+        preparation_generation = int(control["generation"]) if control else 0
+        if control and not control["enabled"]:
+            return {**_control_reply(session, "off"), "first_invocation": False,
+                    "continue_with_user_request": True}
+        _activate_scope_for_chat_locked(canonical, identifier)
         config = thread_tree.load_scope_config()
         project_row = db.execute(
             "SELECT updated_at FROM projects WHERE id=?", (project_id,),
@@ -226,6 +386,10 @@ def prepare_current_chat(
         raise ValueError("resolved transcript does not belong to the current project")
 
     with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+        current_control = state.chat_control(db, project_id, identifier)
+        if (int(current_control["generation"]) if current_control else 0) != preparation_generation:
+            return {**_control_reply(session, "off"), "reason": "connection_changed_during_preparation",
+                    "first_invocation": False, "continue_with_user_request": True}
         project_row = db.execute("SELECT updated_at FROM projects WHERE id=?", (project_id,)).fetchone()
         decision = scope.scope_decision(
             thread_tree.load_scope_config(), canonical, identifier,
@@ -283,13 +447,18 @@ def prepare_current_chat(
     failures = list(processed.get("failures") or [])
     db = thread_tree.connect_db()
     try:
-        activation = state.finish_chat_activation(
-            db,
-            project_id=project_id,
-            thread_id=identifier,
-            indexed_through_line=int(parsed.get("last_line") or 0),
-            error="; ".join(failures) if failures else None,
-        )
+        with thread_tree.scope_mutation_lock():
+            control = state.chat_control(db, project_id, identifier)
+            if (control and not control["enabled"]) or (int(control["generation"]) if control else 0) != preparation_generation:
+                return {**_control_reply(session, "off"), "first_invocation": first_invocation,
+                        "continue_with_user_request": True}
+            activation = state.finish_chat_activation(
+                db,
+                project_id=project_id,
+                thread_id=identifier,
+                indexed_through_line=int(parsed.get("last_line") or 0),
+                error="; ".join(failures) if failures else None,
+            )
     finally:
         db.close()
     return {
@@ -434,6 +603,7 @@ def search_project_history(
     project_root: str | None = None,
     exclude_chunk_ids: Iterable[str] = (),
     max_results: int = 8,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Search one project's history through a single global lookup and bounded widening."""
 
@@ -444,7 +614,24 @@ def search_project_history(
     if not 1 <= int(max_results) <= 20:
         raise ValueError("max_results must be between 1 and 20")
     excluded = {str(chunk_id) for chunk_id in exclude_chunk_ids}
+    # Host chat identity, not the queried project, gates recall. An exact chat
+    # can have an off marker before its first session observation exists.
+    caller_id = str(thread_id or os.environ.get("CODEX_THREAD_ID") or os.environ.get("CODEX_SESSION_ID")
+                    or os.environ.get("CLAUDE_SESSION_ID") or "").strip()
+    caller = {"thread_id": caller_id}
+    def control_snapshot(connection: Any) -> list[tuple[Any, ...]]:
+        query = "SELECT project_id,generation,enabled FROM chat_plugin_controls"
+        if caller_id:
+            return [tuple(row) for row in connection.execute(query + " WHERE thread_id=? ORDER BY project_id", (caller_id,))]
+        return [tuple(row) for row in connection.execute(query + " ORDER BY project_id,thread_id")]
     with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as db:
+        if not caller_id and db.execute("SELECT 1 FROM chat_plugin_controls WHERE enabled=0 LIMIT 1").fetchone():
+            return {**_control_reply({}, "session_unavailable", ok=False,
+                message="Context Saver needs the exact current chat ID before history lookup because a chat is switched off. No saved history was returned."),
+                "evidence": [], "trace": {"global_lookup_count": 0}}
+        caller_generation = control_snapshot(db)
+        if any(not item[2] for item in caller_generation):
+            return {**_control_reply(caller, "off"), "evidence": [], "trace": {"global_lookup_count": 0}}
         project_id, canonical_root, project_scope = _resolve_project(project_root)
         state.record_project_invocation(db, project_id, invoked_at)
         watermark = int(db.execute(
@@ -661,6 +848,19 @@ def search_project_history(
         stop_reason = "max_results"
     else:
         stop_reason = "candidates_exhausted"
+    if caller_id:
+        with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as current_db:
+            current_generation = control_snapshot(current_db)
+            if current_generation != caller_generation or any(not item[2] for item in current_generation):
+                return {**_control_reply(caller, "off"), "evidence": [], "trace": {"global_lookup_count": 1},
+                        "reason": "connection_changed_during_lookup"}
+    else:
+        with thread_tree.scope_mutation_lock(), closing(thread_tree.connect_db()) as current_db:
+            current_generation = control_snapshot(current_db)
+            if current_generation != caller_generation or any(not item[2] for item in current_generation):
+                return {**_control_reply({}, "session_unavailable", ok=False,
+                    message="Context Saver needs this chat's exact ID because a connection changed during lookup. No saved history was returned."),
+                    "evidence": [], "trace": {"global_lookup_count": 1}}
     return {
         "lookup_id": lookup_id,
         "project_id": project_id,

@@ -21,16 +21,27 @@ except ImportError as error:  # pragma: no cover - exercised by clean-install ch
 
 from thread_tree_tools import prepare_current_chat as prepare_chat
 from thread_tree_tools import search_project_history as search_history
+from thread_tree_tools import control_current_chat as control_chat
 
 
 server = FastMCP(
     "thread-tree",
     instructions=(
-        "When Context Saver is explicitly attached or invoked, call "
+        "Handle Context Saver off, on, and status controls before preparation: "
+        "call control_current_chat with the requested action and exact current chat "
+        "identity. Off/status must never activate or prepare a chat. Report the "
+        "returned status clearly; never claim disconnected if the tool failed. "
+        "Off persists until explicit on, preserves saved context, and applies only "
+        "to this chat. Do not retrieve history when preparation or a control "
+        "reports off. Pass the exact current caller thread_id for lookup when "
+        "the host does not supply it; never retry an identity refusal anonymously. "
+        "For other explicit invocations, call "
         "prepare_current_chat once before handling the user's request. The tool "
         "checks Context Saver's own attached-chat list and backfills only on the "
         "first invocation. Always continue with the original user request after "
-        "preparation. "
+        "preparation. After a successful explicit activation returning ready, "
+        "briefly confirm Context Saver is ON for this chat; never claim ON "
+        "while preparation is off, paused, or unsuccessful. "
         "Search project conversation history only when needed information is not "
         "explicitly stated in the active context. A familiar topic, vague summary, "
         "or confident inference is not answer-bearing evidence. Use one self-contained query per "
@@ -40,6 +51,28 @@ server = FastMCP(
         "text with each chunk's chat title and timestamp."
     ),
 )
+
+
+@server.tool()
+def control_current_chat(
+    action: str,
+    project_root: str | None = None,
+    thread_id: str | None = None,
+) -> dict:
+    """Turn Context Saver off/on for this chat, or report its status.
+
+    Use action='off' to stop saving and history recall here, preserving already
+    saved context. It stays off across restarts and ordinary plugin invocations.
+    Use action='on' only when the user explicitly asks to reconnect; capture
+    resumes from now and skips the off interval. Use action='status' for a
+    read-only status check. Off/status must run instead of prepare_current_chat.
+
+    Pass the exact current host chat ID when available (Claude skills expose
+    CLAUDE_SESSION_ID); never guess the most recently observed chat. A missing
+    or conflicting identity must be resolved before claiming success. This is
+    a reversible chat control, distinct from deleting context via Disconnect.
+    """
+    return control_chat(action, project_root=project_root, thread_id=thread_id)
 
 
 @server.tool()
@@ -54,7 +87,8 @@ def prepare_current_chat(
     Context Saver's persisted attached-chat list. On the first invocation it
     activates only this chat and synchronously indexes all completed earlier
     turns. Later calls return immediately. Regardless of status, continue with
-    the user's original attached message after this call.
+    the user's original attached message after this call. An explicitly off
+    chat stays off; use control_current_chat for off/on/status commands.
 
     Args:
         project_root: Optional current project root; normally inferred from the prompt hook.
@@ -71,6 +105,7 @@ def search_project_history(
     project_root: str | None = None,
     exclude_chunk_ids: list[str] | None = None,
     max_results: int = 8,
+    thread_id: str | None = None,
 ) -> dict:
     """Search earlier chats in the current project.
 
@@ -92,6 +127,9 @@ def search_project_history(
         project_root: Current canonical project root. Required when multiple trees exist.
         exclude_chunk_ids: Evidence chunks the model already inspected in this reasoning path.
         max_results: Maximum evidence chunks to return, from 1 through 20.
+        thread_id: Exact current caller chat ID when the host does not provide
+            it to the MCP process. Claude skills supply CLAUDE_SESSION_ID. This
+            identity enforces the chat's off switch; it is not a source filter.
     """
 
     return search_history(
@@ -100,6 +138,7 @@ def search_project_history(
         project_root=project_root,
         exclude_chunk_ids=exclude_chunk_ids or [],
         max_results=max_results,
+        thread_id=thread_id,
     )
 
 

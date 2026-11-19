@@ -209,8 +209,25 @@ def enqueue_transcript(
         raise RuntimeError("Could not determine thread ID")
     project_root = parsed["cwd"] or supplied_cwd
     project_id = state.project_id_for(project_root)
-    action_lock = tree.scope_mutation_lock() if enforce_scope else nullcontext()
+    # Explicit off is a hard capture boundary even for a manual queue/backfill.
+    action_lock = tree.scope_mutation_lock()
     with action_lock, closing(tree.connect_db()) as db:
+        control = state.chat_control(db, project_id, thread_id)
+        if control and not control["enabled"]:
+            return {"scope_blocked": True, "reason": "chat_off", "project_id": project_id, "queued_turns": 0}
+        if control and int(control.get("capture_after_line") or 0):
+            # A resume watermark belongs to one immutable transcript prefix.
+            # Never apply its line numbers to a truncated/replaced transcript.
+            cutoff = int(control["capture_after_line"])
+            digest = hashlib.sha256()
+            with transcript_path.open("rb") as handle:
+                for _ in range(cutoff):
+                    line = handle.readline()
+                    if not line:
+                        raise ValueError("Context Saver resume transcript was shortened")
+                    digest.update(line)
+            if digest.hexdigest() != control.get("prefix_hash"):
+                raise ValueError("Context Saver resume transcript was replaced")
         if enforce_scope:
             if parsed["thread_id"] and supplied_thread_id and parsed["thread_id"] != supplied_thread_id:
                 raise ValueError("transcript chat does not match the hook")
@@ -224,6 +241,7 @@ def enqueue_transcript(
         return _queue_parsed_transcript(
             db, transcript_path, parsed, thread_id, project_root, project_id,
             include_active=include_active, mark_incomplete_partial=mark_incomplete_partial,
+            capture_after_line=int(control.get("capture_after_line") or 0) if control else 0,
         )
 
 
@@ -237,6 +255,7 @@ def _queue_parsed_transcript(
     *,
     include_active: bool,
     mark_incomplete_partial: bool,
+    capture_after_line: int = 0,
 ) -> dict[str, Any]:
     tree = _tree_module()
     config = _project_config()
@@ -262,6 +281,8 @@ def _queue_parsed_transcript(
         is_partial = is_incomplete and mark_incomplete_partial
         line_start = min(int(item["line"]) for item in group)
         line_end = max(int(item["line"]) for item in group)
+        if line_start <= capture_after_line:
+            continue
         content_hash = _turn_content_hash(group)
         turn_id = state.stable_id("turn", project_id, thread_id, line_start, line_end, content_hash, CHUNKER_VERSION)
         before = db.execute(
@@ -1403,7 +1424,16 @@ def _process_project(
     if max_turns is None or max_turns > 0:
         state.requeue_retryable_turns(db, project_id, thread_id)
     while max_turns is None or processed < max_turns:
-        turn = state.claim_next_turn(db, project_id, thread_id=thread_id)
+        with tree.scope_mutation_lock():
+            turn = state.claim_next_turn(db, project_id, thread_id=thread_id)
+            control = state.chat_control(db, project_id, str(turn["thread_id"])) if turn else None
+            control_generation = int(control["generation"]) if control else 0
+            if turn and control and (not control["enabled"] or (
+                int(control.get("capture_after_line") or 0) and
+                (turn.get("line_start") is None or int(turn["line_start"]) <= int(control["capture_after_line"]))
+            )):
+                state.transition_turn(db, turn["id"], "evicted", "outside connected capture window", lease_token=turn["lease_token"])
+                continue
         if not turn:
             break
         try:
@@ -1425,8 +1455,13 @@ def _process_project(
                 for chunk, vector in zip(chunks, vectors):
                     chunk["embedding"] = _normalize(vector)
                     chunk["embedding_model"] = provider.embedding_model
-            _initial_states(db, project_id, chunks)
-            state.complete_turn_ingestion(db, turn["id"], chunks, lease_token=turn["lease_token"])
+            with tree.scope_mutation_lock():
+                current_control = state.chat_control(db, project_id, str(turn["thread_id"]))
+                current_generation = int(current_control["generation"]) if current_control else 0
+                if current_generation != control_generation or (current_control and not current_control["enabled"]):
+                    raise state.LostTurnLeaseError(turn["id"])
+                _initial_states(db, project_id, chunks)
+                state.complete_turn_ingestion(db, turn["id"], chunks, lease_token=turn["lease_token"])
             processed += 1
         except state.LostTurnLeaseError:
             # A newer claim won while a provider call was in flight.

@@ -2,7 +2,7 @@
 
 Context Saver is a **Codex and Claude Code plugin for macOS, Linux, and Windows** with a browser viewer for your saved project chats. Search your conversations, browse from subjects down to individual messages, and choose which chats stay connected. Your coding agent can also recover earlier decisions and cite the original messages.
 
-[Install the plugin](#install) · [Open the viewer](#open-the-viewer) · [Refresh existing topics](#refresh-existing-topics)
+[Install the plugin](#install) · [Turn it off or on](#turn-it-off-or-on) · [Open the viewer](#open-the-viewer) · [Refresh existing topics](#refresh-existing-topics)
 
 <a id="install-on-macos"></a>
 
@@ -21,7 +21,7 @@ codex plugin marketplace add ajorge2/context-saver
 codex plugin add thread-tree@context-saver
 ```
 
-Review the Context Saver hooks in **Settings → Hooks** in the desktop app or with `/hooks` in the terminal UI. Start a new chat and attach **Context Saver** to begin saving that chat.
+Review the Context Saver hooks in **Settings → Hooks** in the desktop app or with `/hooks` in the terminal UI. Start a new chat and attach **Context Saver** to begin saving that chat. You can send **Context Saver off** whenever you want to disconnect it from that chat.
 
 ### Claude Code
 
@@ -29,7 +29,27 @@ Review the Context Saver hooks in **Settings → Hooks** in the desktop app or w
 claude plugin install thread-tree --marketplace ajorge2/context-saver
 ```
 
-Start a new Claude Code session in your project and run `/thread-tree:context-saver` to begin saving that chat.
+Start a new Claude Code session in your project and run `/thread-tree:context-saver` to begin saving that chat. Run `/thread-tree:context-saver off` to disconnect it.
+
+## Turn it off or on
+
+**You control when Context Saver is connected to each chat.** Use **off** to stop saving new messages and stop the agent from looking up saved history in that chat. Existing saved context stays intact, and other chats keep their own connection settings.
+
+| Client | Turn off | Reconnect | Check the connection |
+|---|---|---|---|
+| Codex app | Attach **Context Saver**, then send **off** or **Context Saver off** | Send **Context Saver on** | Send **Context Saver status** |
+| Codex CLI | Select **Context Saver** from the `$` skill menu, then append `off` | Select it and append `on` | Select it and append `status` |
+| Claude Code | `/thread-tree:context-saver off` | `/thread-tree:context-saver on` | `/thread-tree:context-saver status` |
+
+A successful **off** command confirms:
+
+> **Context Saver is OFF for this chat.** New messages won’t be saved and saved history won’t be used here. Existing saved context is kept.
+
+Successful activation or **on** confirms **“Context Saver is ON for this chat.”** Use **status** whenever you want to check.
+
+Off persists when you reopen the chat. Attaching the plugin or opening its viewer keeps that chat off until you explicitly reconnect it. **On** resumes saving from that point; it does not import the messages exchanged while off. **Status** checks the connection without activating it. The agent reports an unresolved chat identity or a blocked connection instead of claiming the command succeeded.
+
+The viewer remains available while a chat is off. Its **Disconnect** action removes saved context after the memory update; use **off** when you want to keep it. Text already present in the coding agent’s active conversation remains there. [Control behavior and direct Terminal commands](docs/chat-controls.md)
 
 ## Open the viewer
 

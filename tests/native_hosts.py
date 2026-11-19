@@ -56,7 +56,7 @@ def isolated_environment(root: Path) -> dict[str, str]:
         path.mkdir(parents=True, exist_ok=True)
     environment = dict(os.environ)
     for name in ("CODEX_SQLITE_HOME", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN",
-                 "CODEX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_SESSION_ID", "CODEX_THREAD_ID"):
+                 "CODEX_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID"):
         environment.pop(name, None)
     environment.update(
         CODEX_HOME=str(paths["codex"]),
@@ -183,10 +183,72 @@ async def verify_installed_mcp(installed: Path, project: Path, env: dict[str, st
         async with ClientSession(reader, writer) as session:
             await session.initialize()
             tools = await session.list_tools()
-            assert {tool.name for tool in tools.tools} == {"prepare_current_chat", "search_project_history"}
+            assert {tool.name for tool in tools.tools} == {
+                "prepare_current_chat", "search_project_history", "control_current_chat",
+            }
             result = await session.call_tool("search_project_history", {"query": "synthetic absent marker", "project_root": str(project)})
             assert result.isError, result
             assert any("not configured" in getattr(item, "text", "") for item in result.content)
+
+    # A separate store keeps control acceptance from activating or pausing the
+    # later installed-hook conversation. Reopen the real installed MCP server
+    # so the check cannot pass using only process-local memory.
+    control_store = Path(env["THREAD_HISTORY_TREE_DATA"]).parent / "control-data"
+    control_store.mkdir()
+    (control_store / "config.json").write_text(json.dumps({
+        "embedding_provider": "none", "ollama_url": "fixture-no-network:",
+    }), encoding="utf-8")
+    control_environment = {**environment, "THREAD_HISTORY_TREE_DATA": str(control_store),
+                           "CODEX_THREAD_ID": "native-control-chat"}
+    control_parameters = StdioServerParameters(command=server["command"], args=args,
+        cwd=str(installed if host == "codex" else project), env=control_environment)
+
+    def control_payload(result):
+        assert not result.isError, result
+        return json.loads(next(item.text for item in result.content if getattr(item, "type", None) == "text"))
+
+    identity = {"project_root": str(project), "thread_id": "native-control-chat"}
+    control_transcript = control_store / "synthetic-off.jsonl"
+    control_rows = [{"type": "session_meta", "payload": {
+        "session_id": identity["thread_id"], "cwd": str(project),
+    }}]
+    for role in ("user", "assistant"):
+        control_rows.append({"type": "response_item", "payload": {
+            "type": "message", "id": f"off-{role}", "role": role,
+            "content": [{"type": "input_text" if role == "user" else "output_text",
+                         "text": "NATIVE-OFF-CONTROL-PRIVATE-71ce must not be saved."}],
+        }})
+    control_transcript.write_text("\n".join(json.dumps(row) for row in control_rows) + "\n", encoding="utf-8")
+    for iteration in range(2):
+        async with stdio_client(control_parameters) as (reader, writer):
+            async with ClientSession(reader, writer) as session:
+                await session.initialize()
+                result = control_payload(await session.call_tool("control_current_chat", {
+                    "action": "off" if iteration == 0 else "status", **identity,
+                }))
+                assert result["ok"] and result["status"] == "off" and not result["enabled"], result
+                assert "OFF" in result["message"] and result["scope"] == "chat", result
+                prepared = control_payload(await session.call_tool("prepare_current_chat", identity))
+                assert prepared["status"] == "off", prepared
+                if iteration == 0:
+                    event = {"cwd": str(project), "session_id": identity["thread_id"],
+                             "transcript_path": str(control_transcript), "turn_id": "off-control-turn",
+                             "prompt": "NATIVE-OFF-CONTROL-PRIVATE-71ce must not be staged."}
+                    for script in ("user_prompt_submit.py", "stop.py", "pre_compact.py"):
+                        hook = subprocess.run([sys.executable, "-X", "utf8", str(installed / "scripts" / script)],
+                            input=json.dumps(event), env=control_environment, cwd=project,
+                            capture_output=True, encoding="utf-8", timeout=20)
+                        assert hook.returncode == 0, (script, hook.stderr)
+                        hook_result = json.loads(hook.stdout)
+                        assert hook_result["continue"] and "systemMessage" not in hook_result, (script, hook_result)
+                searched = control_payload(await session.call_tool("search_project_history", {
+                    "query": "synthetic absent marker", "project_root": str(project),
+                }))
+                assert searched["status"] == "off" and not searched.get("evidence"), searched
+    with closing(sqlite3.connect(control_store / "index.sqlite3")) as database:
+        assert database.execute("SELECT COUNT(*) FROM turn_chunks").fetchone()[0] == 0
+        assert database.execute("SELECT COUNT(*) FROM staged_user_prompts").fetchone()[0] == 0
+    assert not (control_store / "hook-errors.jsonl").exists(), "off hooks must succeed without writing an error"
 
 
 def _claude_index_snapshot(store: Path) -> dict:
@@ -293,7 +355,8 @@ def main() -> None:
             asyncio.run(asyncio.wait_for(verify_installed_mcp(installed, project, env, host), timeout=120))
             if host == "claude":
                 verify_claude_turn(project, root, env, reports)
-            outcomes[host] = {"installed": True, "mcp_connected": True, "completed_turn": host == "claude"}
+            outcomes[host] = {"installed": True, "mcp_connected": True,
+                              "chat_controls": True, "completed_turn": host == "claude"}
             print(f"{host}: native install and MCP passed", flush=True)
     (reports / "native-hosts.json").write_text(json.dumps(outcomes, indent=2), encoding="utf-8")
 

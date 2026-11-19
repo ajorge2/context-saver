@@ -54,7 +54,7 @@ FASTEMBED_MODEL_NAME = "ibm-granite/granite-embedding-small-english-r2"
 FASTEMBED_MODEL_VERSION = "granite-small-english-r2-u8u8-pc-v2"
 FASTEMBED_MODEL_SHA256 = "0a65b9f383a5da3833a7ecb16778bf27e04373f45a3af1c5919a4b87f51a4422"
 FASTEMBED_DIMENSION = 384
-PLUGIN_VERSION = "0.1.22"
+PLUGIN_VERSION = "0.1.23"
 DEFAULT_DATA_DIR = Path.home() / ".local" / "share" / "thread-tree"
 LEGACY_CODEX_DATA_DIR = Path.home() / ".codex" / "thread-history-tree"
 DEFAULT_CODEX_HOME = Path(os.environ.get("CODEX_HOME") or (Path.home() / ".codex")).expanduser()
@@ -1891,6 +1891,10 @@ def connections_payload() -> dict[str, Any]:
     }
     project_paths = list(dict.fromkeys([*configured_projects, *indexed_projects]))
     db = connect_db()
+    explicitly_off = {
+        (str(row["project_id"]), str(row["thread_id"]))
+        for row in db.execute("SELECT project_id,thread_id FROM chat_plugin_controls WHERE enabled=0")
+    }
     result: list[dict[str, Any]] = []
     for path in project_paths:
         project = configured_projects.get(path, {})
@@ -1936,7 +1940,10 @@ def connections_payload() -> dict[str, Any]:
             chats.append({
                 "id": thread_id,
                 "title": str(chat.get("title") or f"Chat {thread_id[:8]}"),
-                "status": "paused" if project_paused or not scope.chat_is_selected(project, thread_id) else "connected",
+                "status": "paused" if (
+                    project_paused or (project_id, thread_id) in explicitly_off
+                    or not scope.chat_is_selected(project, thread_id)
+                ) else "connected",
                 "disconnectPending": thread_id in pending_chat_ids,
                 "lastActivityAt": (activation or {}).get("lastInvokedAt") or chat.get("timestamp"),
             })
@@ -2133,6 +2140,33 @@ def connection_refresh_status(job_id: str | None = None, *, check_worker: bool =
 
 
 def update_connection(payload: Any) -> dict[str, Any]:
+    # The viewer's Resume action must share the chat command's durable consent
+    # state, including its transcript cutoff. Call outside the scope lock: the
+    # control handler owns that short cross-process boundary itself.
+    if (
+        isinstance(payload, dict)
+        and payload.get("kind") == "chat"
+        and payload.get("action") in {"pause", "resume"}
+        and str(payload.get("projectPath") or "").strip()
+        and str(payload.get("threadId") or "").strip()
+    ):
+        from thread_tree_state import chat_control, project_id_for
+
+        canonical = str(Path(str(payload["projectPath"])).expanduser().resolve())
+        identifier = str(payload["threadId"]).strip()
+        with closing(connect_db()) as db:
+            controlled = chat_control(db, project_id_for(canonical), identifier)
+        if controlled is not None:
+            from thread_tree_tools import control_current_chat
+
+            result = control_current_chat(
+                "off" if payload["action"] == "pause" else "on",
+                project_root=canonical,
+                thread_id=identifier,
+            )
+            if not result.get("ok"):
+                raise ValueError(result["message"])
+            return {"ok": True, "action": payload["action"], "connections": connections_payload()["connections"]}
     with scope_mutation_lock():
         return _update_connection_locked(payload)
 
@@ -2618,6 +2652,15 @@ def build_parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command", required=True)
 
     commands.add_parser("init", help="Create the database schema")
+    for action, help_text in (
+        ("off", "Turn Context Saver off for this chat, keeping saved context"),
+        ("on", "Reconnect this chat; resume saving from now"),
+        ("status", "Show whether Context Saver is on or off for this chat"),
+    ):
+        control_parser = commands.add_parser(action, help=help_text)
+        control_parser.add_argument("--project", type=Path, help="Current project folder")
+        control_parser.add_argument("--thread-id", help="Exact current host chat/session ID")
+        control_parser.add_argument("--json", action="store_true")
     threads_parser = commands.add_parser("threads", help="List indexed threads")
     threads_parser.add_argument("--json", action="store_true")
 
@@ -2665,6 +2708,19 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command in {"off", "on", "status"}:
+        from thread_tree_tools import control_current_chat
+
+        result = control_current_chat(
+            args.command,
+            project_root=str(args.project) if args.project is not None else None,
+            thread_id=args.thread_id,
+        )
+        if args.json:
+            print_output(result, True)
+        else:
+            print(result["message"])
+        return 0 if result.get("ok") else 2
     if args.command == "init":
         db = connect_db()
         db.close()
