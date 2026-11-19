@@ -65,6 +65,16 @@ async function boot(page, browsePayload = () => ({ ...payload, query: "" })) {
   await page.locator("[data-hero-combobox] .combobox-option").click();
 }
 
+async function openSlide(page, name) {
+  const index = { Welcome: 0, Subjects: 1, "Broad Topics": 2, "Specific Topics": 3, "Specific Messages": 4 }[name];
+  const dot = page.getByRole("button", { name: `Go to ${name}`, exact: true });
+  await dot.click();
+  await expect(dot).toHaveClass(/is-active/);
+  await expect.poll(() => page.locator(`[data-section="${index}"]`).evaluate(
+    (element) => Math.abs(element.getBoundingClientRect().top),
+  )).toBeLessThan(1);
+}
+
 async function search(page) {
   let releaseResponse;
   const loadingChecked = new Promise((resolve) => { releaseResponse = resolve; });
@@ -96,10 +106,12 @@ test("UX-002/EX-001: committed search populates all four hierarchy layers", asyn
 test("FL-006/FL-007: card and dropdown selections share one intersecting filter model", async ({ page }) => {
   await boot(page);
   await search(page);
+  await openSlide(page, "Subjects");
   await page.locator('[data-section="1"] .feature-card', { hasText: "Launch" }).locator(".feature-card__toggle").click();
   await expect(page.locator('[data-section="1"] .feature-card')).toHaveCount(1);
   await expect(page.locator('[data-section="4"] .feature-card')).toHaveCount(2);
   await expect(page.locator('[data-layer-key="subject"] [data-combobox-value]')).toHaveText("Launch");
+  await openSlide(page, "Specific Messages");
   await page.locator('[data-layer-key="specific_message"] .combobox-trigger').click();
   await page.locator('[data-layer-key="specific_message"] .combobox-option', { hasText: "Rollback" }).click();
   await expect(page.locator('[data-section="3"] .feature-card h3')).toHaveText("Rollback");
@@ -109,7 +121,7 @@ test("FL-006/FL-007: card and dropdown selections share one intersecting filter 
 test("MD-001/MD-006: card body opens readable metadata and Escape restores focus", async ({ page }) => {
   await boot(page);
   await search(page);
-  await page.getByRole("button", { name: "Go to Subjects" }).click();
+  await openSlide(page, "Subjects");
   const body = page.locator('[data-section="1"] .feature-card', { hasText: "Launch" }).locator(".feature-card__body");
   await body.click();
   await expect(page.locator("[data-node-detail-overlay]")).toBeVisible();
@@ -126,7 +138,7 @@ test("MD-001/MD-006: card body opens readable metadata and Escape restores focus
 test("MD-004: a disconnected topic never falls back to its cached summary", async ({ page }) => {
   await boot(page);
   await page.route("**/api/node/**", (route) => route.fulfill({ status: 404, json: { error: "not found" } }));
-  await page.getByRole("button", { name: "Go to Subjects" }).click();
+  await openSlide(page, "Subjects");
   await page.getByRole("button", { name: "View metadata for Launch" }).click();
   const content = page.locator("[data-node-detail-content]");
   await expect(page.locator("[data-node-detail-title]")).toHaveText("Context no longer available");
@@ -137,7 +149,9 @@ test("MD-004: a disconnected topic never falls back to its cached summary", asyn
 test("UX-005/EX-003: clearing the query restores project browse mode", async ({ page }) => {
   await boot(page);
   await search(page);
+  await openSlide(page, "Subjects");
   await page.locator('[data-section="1"] .feature-card__toggle').first().click();
+  await openSlide(page, "Welcome");
   await page.locator("[data-spotlight-input]").fill("");
   await expect(page.locator("[data-hero-down-label]")).toHaveText("See what you've been chatting about");
   await expect(page.locator('[data-section="1"] .feature-card')).toHaveCount(2);
@@ -165,7 +179,7 @@ test("project browsing pages through topics and loads older messages within the 
   });
   const messages = page.locator('[data-section="4"]');
   await expect(messages.locator(".feature-card h3")).toHaveText("Ship ten percent first");
-  await page.getByRole("button", { name: "Go to Specific Topics" }).click();
+  await openSlide(page, "Specific Topics");
   const topics = page.locator('[data-section="3"]');
   const pager = topics.getByRole("navigation", { name: "specific topics pages" });
   await expect(topics.locator(".feature-card")).toHaveCount(9);

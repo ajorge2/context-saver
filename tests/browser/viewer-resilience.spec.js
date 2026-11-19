@@ -115,6 +115,10 @@ async function openSlide(page, name) {
   const dot = page.getByRole("button", { name: `Go to ${name}` });
   await dot.click();
   await expect(dot).toHaveClass(/is-active/);
+  const index = Number(await dot.getAttribute("data-section-index"));
+  await expect.poll(() => page.locator(`[data-section="${index}"]`).evaluate(
+    (element) => Math.abs(element.getBoundingClientRect().top),
+  )).toBeLessThan(1);
 }
 
 async function releaseResponse(page, gate, payload) {
