@@ -1,0 +1,43 @@
+case_id,incident,condition,decision_correct,decision_total,controls_correct,controls_total
+stale-canary,A one-sided canary pause,r0_off,6,6,2,2
+stale-canary,A one-sided canary pause,r0_on,6,6,2,2
+stale-canary,A one-sided canary pause,r1_off,4,6,2,2
+stale-canary,A one-sided canary pause,r1_on,6,6,2,2
+stale-canary,A one-sided canary pause,r3_off,2,6,2,2
+stale-canary,A one-sided canary pause,r3_on,6,6,2,2
+stale-canary,A one-sided canary pause,long_off,6,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,r0_off,6,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,r0_on,6,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,r1_off,1,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,r1_on,6,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,r3_off,1,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,r3_on,5,6,2,2
+ambiguous-commit,A publish timed out after issuing a receipt,long_off,5,6,2,2
+stale-rejoin,A live writer with a restored follower,r0_off,6,6,2,2
+stale-rejoin,A live writer with a restored follower,r0_on,6,6,2,2
+stale-rejoin,A live writer with a restored follower,r1_off,4,6,2,2
+stale-rejoin,A live writer with a restored follower,r1_on,4,6,2,2
+stale-rejoin,A live writer with a restored follower,r3_off,2,6,2,2
+stale-rejoin,A live writer with a restored follower,r3_on,6,6,2,2
+stale-rejoin,A live writer with a restored follower,long_off,6,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,r0_off,6,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,r0_on,6,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,r1_off,4,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,r1_on,5,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,r3_off,3,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,r3_on,6,6,2,2
+post-seal-recovery,Recovery after a one-way key switch,long_off,6,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,r0_off,6,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,r0_on,6,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,r1_off,6,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,r1_on,6,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,r3_off,6,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,r3_on,5,6,2,2
+purge-restart,A tenant was disconnected during an interrupted purge,long_off,6,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,r0_off,6,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,r0_on,6,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,r1_off,5,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,r1_on,5,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,r3_off,5,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,r3_on,5,6,2,2
+signed-backoff,Quota refusal behind a proxy during partition replay,long_off,6,6,2,2

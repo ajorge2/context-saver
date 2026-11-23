@@ -1,0 +1,44 @@
+name: Benchmark evidence analysis
+
+on:
+  push:
+    paths:
+      - research/compaction-benchmark/**
+      - README.md
+      - BENCHMARK.md
+      - .github/workflows/benchmark-analysis.yml
+  pull_request:
+    paths:
+      - research/compaction-benchmark/**
+      - README.md
+      - BENCHMARK.md
+      - .github/workflows/benchmark-analysis.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recompute:
+    name: Recompute saved experiment evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUTF8: "1"
+    defaults:
+      run:
+        working-directory: research/compaction-benchmark
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Recompute tables, incident reports, and figures without model access
+        run: python -B analyze.py
+      - name: Check evidence integrity, expected results, and negative controls
+        run: python -B verify.py
+      - name: Check the archived diagnostic scorer independently
+        run: python -B harness/meridian-compaction-2026-11-17/reproduction/context-saver-human-score.py --self-check
+      - name: Require generated results to match the published files
+        run: git diff --exit-code -- .

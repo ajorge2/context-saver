@@ -1,0 +1,89 @@
+{
+  "experiment_date": "2026-11-17",
+  "export_sha256": {
+    "cached-summaries.json": "70eb15872e3ba5ed77ea1507af8d9736e05fa0d516e875fc60d6fbcdbef40982",
+    "fixtures.json": "e77e2fcf09962f3ffeda85f280bc35d50528da26f5f494936a5d4353468de3ac",
+    "measurements.json": "4771b519d200d3856aaf3ae05ac85c98ca6d08b7817ac7b9a7d666c8e29c0e08",
+    "records.json": "2a661d69fe185d0ac96152491965b2ad24bc29d2b5c2765e50e7f0c5668d520c",
+    "run-manifest.json": "713689811c0adb4f0461fe69e04c56471dde07c0b10efa6d7bcae7f4ceb2fede"
+  },
+  "export_type": "Whitelist export of synthetic fixture text, retained parsed model answers, historical boolean grades, and numeric telemetry. No live account, user chat, or model call was used during export.",
+  "hash_scope": "Source hashes attest exact archived source bytes. Public export hashes below attest sanitized exported bytes, not the omitted source event stream. They are integrity checks, not external authentication.",
+  "not_archived": [
+    "Byte-for-byte original full answer response envelopes",
+    "Blinded reviewer rationales, independent duplicate grades or adjudication logs",
+    "Opaque native compaction contents and provider/internal session identifiers",
+    "Raw search-result bodies; archive retains verified-evidence/citation flags and readable citation labels",
+    "Exact historical plugin source files: manifest hashes identify them, but this export does not reconstruct them",
+    "Dollar billing records or pricing; observed token usage must not be equated with billed dollars"
+  ],
+  "schema_version": 1,
+  "source_artifacts": [
+    {
+      "bytes": 467081,
+      "sha256": "2fb1e9f186c01ef53a82f5fc8cba53aa0d9b20f9b6e15233fc9d08378830defb",
+      "source_relative_path": "strict-alias-results.json"
+    },
+    {
+      "bytes": 12708,
+      "sha256": "f9d79a178b12ba0b2aa384d6f26cf25ff8da2ea2c17ddfbd319672d374434feb",
+      "source_relative_path": "semantic-results.json"
+    },
+    {
+      "bytes": 1948,
+      "sha256": "e548c9251c044332d161de9af39cc664e4be75da4b51841cd3491ad240331186",
+      "source_relative_path": "run-manifest.json"
+    },
+    {
+      "bytes": 21029,
+      "sha256": "a40ee08a8e86500dc2735f9a65ea39cd556a3cd5f6d6b714979f3a4d6385f2a7",
+      "source_relative_path": "casebook.md"
+    },
+    {
+      "bytes": 5830,
+      "sha256": "2084239cd470629366822404a5d54da93c37eec10a644bac929827ea426af9d6",
+      "source_relative_path": "README.md"
+    },
+    {
+      "bytes": 39986,
+      "sha256": "c8794b9a852c82a4eb29567d7fd180c68c364b3df5946f7b4563b4b532c221a6",
+      "source_relative_path": "reproduction/context-saver-human-fixtures.py"
+    },
+    {
+      "bytes": 16969,
+      "sha256": "8ba5c4b3476c7ba527f1686475696e495585704ada85a235bdd557247de87d66",
+      "source_relative_path": "reproduction/context-saver-human-run.py"
+    },
+    {
+      "bytes": 46444,
+      "sha256": "604aa09fb425e3325210bd59e7a4bbf31e84afaa7d79ea7062c6bc761485386a",
+      "source_relative_path": "reproduction/context-saver-human-score.py"
+    }
+  ],
+  "transformations": [
+    {
+      "action": "Retain field strings, strict score diagnostics, readable citation labels, per-answer usage and elapsed timing. Replace thread/turn identifiers with deterministic case_id--condition record IDs. Drop synthetic chunk IDs while retaining matching-evidence labels.",
+      "source": "strict-alias-results.json:scenarios[].results"
+    },
+    {
+      "action": "Retain only numeric elapsed/count telemetry and provider usage; drop thread/turn/provider-response IDs, provider items, opaque compaction payloads, raw usage events and empty answer fields.",
+      "source": "strict-alias-results.json:scenarios[].compactions"
+    },
+    {
+      "action": "Join original field-level boolean grades onto answer records. Retain cached aggregates separately as cross-checks. Omit semantic-regrading elapsed time because it is not answer or retrieval overhead.",
+      "source": "semantic-results.json"
+    },
+    {
+      "action": "Import the archived pure fixture generator and export exactly the early design plus three intervening rounds used by the native experiment, final question, and rubric. Preserve synthetic wording verbatim. Omit extra unused generator phases.",
+      "source": "reproduction/context-saver-human-fixtures.py"
+    },
+    {
+      "action": "Retain accuracy, quality, means, paired medians, maintenance and diagnostics for consistency verification. Omit historical bootstrap intervals and contrasts to avoid presenting correlated fields as independent trials.",
+      "source": "strict-alias-results.json:aggregate summaries"
+    },
+    {
+      "action": "Retain all configuration and candidate file hashes unchanged in value. JSON formatting/key order normalized.",
+      "source": "run-manifest.json"
+    }
+  ]
+}

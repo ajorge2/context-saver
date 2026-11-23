@@ -4,7 +4,13 @@ Context Saver is a **Codex and Claude Code plugin for macOS, Linux, and Windows*
 
 **You control the connection:** send **Context Saver off** to disconnect this chat while keeping saved context, **Context Saver on** to reconnect, or **Context Saver status** to check. Successful activation and disconnection clearly confirm **ON** and **OFF**.
 
-[Install the plugin](#install) · [Turn it off or on](#turn-it-off-or-on) · [Open the viewer](#open-the-viewer) · [Refresh existing topics](#refresh-existing-topics)
+[Install the plugin](#install) · [Turn it off or on](#turn-it-off-or-on) · [Open the viewer](#open-the-viewer) · [Inspect the benchmark](research/compaction-benchmark/README.md)
+
+## Does it help the agent remember earlier decisions?
+
+Coding agents shorten long chats through **compaction**, which can leave out earlier project decisions. In a controlled experiment using six fictional software incidents, Codex answered **33 of 36 decision details correctly with Context Saver, compared with 19 without it**, after each chat had been compacted three times. The details included which action to take, in what order, under which conditions, and for whom. The improvement came with additional time and token use; one incident became less accurate.
+
+**[Read the full experiment and inspect its evidence →](research/compaction-benchmark/README.md)** The report explains what was tested, how and why it was tested, and every result. Follow its links to the exact chats, questions, original answers, field-by-field grades, timing and token records, and runnable analysis. These are results from one synthetic Codex experiment, rather than a general accuracy guarantee or a measurement of every plugin version.
 
 <a id="install-on-macos"></a>
 

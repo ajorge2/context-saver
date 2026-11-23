@@ -1,0 +1,8 @@
+condition,description,decision_fields,all_fields,full_decisions,main_actions,decision_denominator,control_correct,control_denominator
+r0_off,Before compaction · Context Saver off,36,48,6,6,36,12,12
+r0_on,Before compaction · Context Saver on,36,48,6,6,36,12,12
+r1_off,After one compaction · Context Saver off,24,36,1,4,36,12,12
+r1_on,After one compaction · Context Saver on,32,44,3,5,36,12,12
+r3_off,After three compactions · Context Saver off,19,31,1,5,36,12,12
+r3_on,After three compactions · Context Saver on,33,45,3,5,36,12,12
+long_off,"Same intervening work, never compacted · off",35,47,5,6,36,12,12

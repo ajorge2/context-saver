@@ -1,0 +1,41 @@
+{
+  "agent_parallel_mcp_allowed": true,
+  "candidate_source_sha256": {
+    ".mcp.json": "9a9c18d9306b5dd936e86e9d9eb5d6f98b183c7eeeae287d2b4a3ab29be03636",
+    "scripts/thread_tree.py": "38d97a680f248a5ca990a62c4b2482863b76206c4570ca295b1fd207404e3c5d",
+    "scripts/thread_tree_pipeline.py": "77007e59cba0638d147058ffb11ff52f9674e94dcb570d2f84caacfe4880e36b",
+    "scripts/thread_tree_rebuild.py": "b111e145723c8ac79a76a6ec4293a62aff9144810220ca671728ba893b8f4d54",
+    "scripts/thread_tree_runtime.py": "1fc400835f460317a345a64e99afccef6a1575c6978d9004a4f7ab11db426bcc",
+    "scripts/thread_tree_scope.py": "afdcda5e812fee59c21bc8550400667543dc35b9bd1963de453d69e1bb0b65d6",
+    "scripts/thread_tree_scope_backfill.py": "4147990f11a01bb8dd8d6298d18a40063157e68478fe38bcfad547dd78221a4e",
+    "scripts/thread_tree_state.py": "9517093b95c278837f0a41e059c3798c4a7b33925d63ed161a99b10608e9c77a",
+    "scripts/thread_tree_tools.py": "674cef882c41f78b1f2a0f66ca58ee0d2e1ee3428e54e2094c70a69a2093383e",
+    "scripts/thread_tree_vector_index.py": "22c4dd9cc4bedbe56d0a8b4b27a9ebf64e38e607dfa220e7f24706a97287da1b",
+    "scripts/thread_tree_worker.py": "2f9dc3b04ee22b39632bc1abafb0f3e3aeaabc134894d79a1b837b1d866ecb2e",
+    "server/smoke_mcp.py": "ad518d5a118ac4b304ba47b2c81f1eeac56ebc885a4d2b28167e6fda80f0252c",
+    "server/thread_tree_mcp.py": "afa88e42cfcea30024ea0e1350d09212a62cead8ee7b91759fa51c29c2974ddc"
+  },
+  "effort": "low",
+  "fixture_sha256": "c8794b9a852c82a4eb29567d7fd180c68c364b3df5946f7b4563b4b532c221a6",
+  "host": "Codex CLI",
+  "long_off": true,
+  "model": "gpt-6-sol",
+  "paired_arms_concurrent": true,
+  "parallel_scenarios": 6,
+  "probe_rounds": [
+    0,
+    1,
+    3
+  ],
+  "scenarios": [
+    "stale-canary",
+    "ambiguous-commit",
+    "stale-rejoin",
+    "post-seal-recovery",
+    "purge-restart",
+    "signed-backoff"
+  ],
+  "seed": "meridian-matched-workflows-nov17-v1",
+  "version": "codex-cli 0.157.1",
+  "workers": 6
+}

@@ -1,0 +1,57 @@
+condition,field,description,in_headline,correct,total
+r0_off,disposition,Action to take,True,6,6
+r0_off,target,Object or identity to use,True,6,6
+r0_off,operations,Steps in the required order,True,6,6
+r0_off,gate,Conditions before proceeding,True,6,6
+r0_off,scope,Who is affected or preserved,True,6,6
+r0_off,authority,Source that overrides conflicting evidence,True,6,6
+r0_off,recent,Current branch (control),False,6,6
+r0_off,unsupported,Unrecorded ticket ID (control),False,6,6
+r0_on,disposition,Action to take,True,6,6
+r0_on,target,Object or identity to use,True,6,6
+r0_on,operations,Steps in the required order,True,6,6
+r0_on,gate,Conditions before proceeding,True,6,6
+r0_on,scope,Who is affected or preserved,True,6,6
+r0_on,authority,Source that overrides conflicting evidence,True,6,6
+r0_on,recent,Current branch (control),False,6,6
+r0_on,unsupported,Unrecorded ticket ID (control),False,6,6
+r1_off,disposition,Action to take,True,4,6
+r1_off,target,Object or identity to use,True,5,6
+r1_off,operations,Steps in the required order,True,1,6
+r1_off,gate,Conditions before proceeding,True,6,6
+r1_off,scope,Who is affected or preserved,True,5,6
+r1_off,authority,Source that overrides conflicting evidence,True,3,6
+r1_off,recent,Current branch (control),False,6,6
+r1_off,unsupported,Unrecorded ticket ID (control),False,6,6
+r1_on,disposition,Action to take,True,5,6
+r1_on,target,Object or identity to use,True,6,6
+r1_on,operations,Steps in the required order,True,4,6
+r1_on,gate,Conditions before proceeding,True,6,6
+r1_on,scope,Who is affected or preserved,True,6,6
+r1_on,authority,Source that overrides conflicting evidence,True,5,6
+r1_on,recent,Current branch (control),False,6,6
+r1_on,unsupported,Unrecorded ticket ID (control),False,6,6
+r3_off,disposition,Action to take,True,5,6
+r3_off,target,Object or identity to use,True,4,6
+r3_off,operations,Steps in the required order,True,1,6
+r3_off,gate,Conditions before proceeding,True,3,6
+r3_off,scope,Who is affected or preserved,True,3,6
+r3_off,authority,Source that overrides conflicting evidence,True,3,6
+r3_off,recent,Current branch (control),False,6,6
+r3_off,unsupported,Unrecorded ticket ID (control),False,6,6
+r3_on,disposition,Action to take,True,5,6
+r3_on,target,Object or identity to use,True,6,6
+r3_on,operations,Steps in the required order,True,4,6
+r3_on,gate,Conditions before proceeding,True,6,6
+r3_on,scope,Who is affected or preserved,True,6,6
+r3_on,authority,Source that overrides conflicting evidence,True,6,6
+r3_on,recent,Current branch (control),False,6,6
+r3_on,unsupported,Unrecorded ticket ID (control),False,6,6
+long_off,disposition,Action to take,True,6,6
+long_off,target,Object or identity to use,True,6,6
+long_off,operations,Steps in the required order,True,5,6
+long_off,gate,Conditions before proceeding,True,6,6
+long_off,scope,Who is affected or preserved,True,6,6
+long_off,authority,Source that overrides conflicting evidence,True,6,6
+long_off,recent,Current branch (control),False,6,6
+long_off,unsupported,Unrecorded ticket ID (control),False,6,6

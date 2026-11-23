@@ -1,0 +1,779 @@
+{
+  "scenarios": [
+    {
+      "case_id": "stale-canary",
+      "checkpoints": {
+        "long": {
+          "anchor_request_input_tokens": null,
+          "compaction_count": 0,
+          "index": null,
+          "sha256": "6adfbc95880e9cea9d9597aa6a508928460701a77f6f84d04485870c5b8ce5ee",
+          "snapshot_bytes": 212183
+        },
+        "r0": {
+          "anchor_request_input_tokens": 8254,
+          "compaction_count": 0,
+          "index": {
+            "archive_round": 0,
+            "chunks": 15,
+            "elapsed_s": 2.6951344160188455,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/stale-canary; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 15
+          },
+          "sha256": "81c3ec46f1060df2d1297b0bd9ec852eb08bb299bbfa0d960a8d56056729b861",
+          "snapshot_bytes": 40178
+        },
+        "r1": {
+          "anchor_request_input_tokens": 18622,
+          "compaction_count": 1,
+          "index": {
+            "archive_round": 0,
+            "chunks": 15,
+            "elapsed_s": 2.6951344160188455,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/stale-canary; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 15
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "2216861fbad78ff645e0a3c8cf226305c7bee1a5cfd7cd91bdbb14413a03df90",
+          "snapshot_bytes": 121736
+        },
+        "r3": {
+          "anchor_request_input_tokens": 18635,
+          "compaction_count": 3,
+          "index": {
+            "archive_round": 0,
+            "chunks": 15,
+            "elapsed_s": 2.6951344160188455,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/stale-canary; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 15
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "8b4a644cc8cb8d55e4777f027b59e54b576ba3517df5fa9458ec1b4915289f6c",
+          "snapshot_bytes": 346009
+        }
+      },
+      "compactions": [
+        {
+          "duration_ms": 4975,
+          "elapsed_s": 4.9776357089867815,
+          "mark_count": 1,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 0,
+            "input_tokens": 18647,
+            "output_tokens": 112,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18759
+          },
+          "round": 1,
+          "visible_message_count": 12,
+          "visible_text_bytes": 1412,
+          "window_number": 1
+        },
+        {
+          "duration_ms": 6515,
+          "elapsed_s": 6.516763041989179,
+          "mark_count": 2,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18304,
+            "input_tokens": 18442,
+            "output_tokens": 127,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18569
+          },
+          "round": 2,
+          "visible_message_count": 16,
+          "visible_text_bytes": 2133,
+          "window_number": 2
+        },
+        {
+          "duration_ms": 8911,
+          "elapsed_s": 8.912796582997544,
+          "mark_count": 3,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 4608,
+            "input_tokens": 18660,
+            "output_tokens": 168,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18828
+          },
+          "round": 3,
+          "visible_message_count": 20,
+          "visible_text_bytes": 2861,
+          "window_number": 3
+        }
+      ],
+      "probe_pair_overlap_s": {
+        "r0": 6.565811582986498,
+        "r1": 10.995595417014556,
+        "r3": 6.503051208012039
+      }
+    },
+    {
+      "case_id": "ambiguous-commit",
+      "checkpoints": {
+        "long": {
+          "anchor_request_input_tokens": null,
+          "compaction_count": 0,
+          "index": null,
+          "sha256": "f293d3a30176e766ca2bc98f4f6db2dce6dc442bd58e78a3b136896ad7c7201f",
+          "snapshot_bytes": 213033
+        },
+        "r0": {
+          "anchor_request_input_tokens": 8294,
+          "compaction_count": 0,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.42981187501573,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/ambiguous-commit; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "sha256": "bed2d8c6531cea0c04df482cb3e38bf17381f2a25e9fd5270924bfdc5c4bbcae",
+          "snapshot_bytes": 41206
+        },
+        "r1": {
+          "anchor_request_input_tokens": 18649,
+          "compaction_count": 1,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.42981187501573,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/ambiguous-commit; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "8892f9fe52386c64f00244b8472517719ca3ab4e6255d22cbb19853136bc5009",
+          "snapshot_bytes": 123625
+        },
+        "r3": {
+          "anchor_request_input_tokens": 18623,
+          "compaction_count": 3,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.42981187501573,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/ambiguous-commit; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "f8c86c088d82379437eeb311abe054eb620d9000a02842d282813dc1e43cd376",
+          "snapshot_bytes": 348632
+        }
+      },
+      "compactions": [
+        {
+          "duration_ms": 7263,
+          "elapsed_s": 7.2647407920158,
+          "mark_count": 1,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18674,
+            "output_tokens": 133,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18807
+          },
+          "round": 1,
+          "visible_message_count": 13,
+          "visible_text_bytes": 1488,
+          "window_number": 1
+        },
+        {
+          "duration_ms": 3152,
+          "elapsed_s": 3.1533214159717318,
+          "mark_count": 2,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 4608,
+            "input_tokens": 18474,
+            "output_tokens": 82,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18556
+          },
+          "round": 2,
+          "visible_message_count": 17,
+          "visible_text_bytes": 2217,
+          "window_number": 2
+        },
+        {
+          "duration_ms": 7380,
+          "elapsed_s": 7.382729541015578,
+          "mark_count": 3,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18648,
+            "output_tokens": 195,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18843
+          },
+          "round": 3,
+          "visible_message_count": 21,
+          "visible_text_bytes": 2931,
+          "window_number": 3
+        }
+      ],
+      "probe_pair_overlap_s": {
+        "r0": 5.402145542000653,
+        "r1": 10.077830583002651,
+        "r3": 7.398095124983229
+      }
+    },
+    {
+      "case_id": "stale-rejoin",
+      "checkpoints": {
+        "long": {
+          "anchor_request_input_tokens": null,
+          "compaction_count": 0,
+          "index": null,
+          "sha256": "6de729d11fd1338dc8eada18241f8aa1862f4b2001d413e50ba2ebb0a3eb0d45",
+          "snapshot_bytes": 212973
+        },
+        "r0": {
+          "anchor_request_input_tokens": 8272,
+          "compaction_count": 0,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.547169166005915,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/stale-rejoin; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "sha256": "f9f5cf86f3731b2a2a5c89084cc78b8267bffa6d771ed0f711fa1056b6f74d51",
+          "snapshot_bytes": 41050
+        },
+        "r1": {
+          "anchor_request_input_tokens": 18631,
+          "compaction_count": 1,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.547169166005915,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/stale-rejoin; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "76b5888e452d710e630f65e39c4557a9380dcd4baccd75fd55e488eceb50636b",
+          "snapshot_bytes": 124682
+        },
+        "r3": {
+          "anchor_request_input_tokens": 18822,
+          "compaction_count": 3,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.547169166005915,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/stale-rejoin; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "ab3e3473b8481549bb941ac3f7b2fa3b3f10b7893d177c90d547383095c5c784",
+          "snapshot_bytes": 351514
+        }
+      },
+      "compactions": [
+        {
+          "duration_ms": 5761,
+          "elapsed_s": 5.7643539589771535,
+          "mark_count": 1,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18656,
+            "output_tokens": 219,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18875
+          },
+          "round": 1,
+          "visible_message_count": 13,
+          "visible_text_bytes": 1449,
+          "window_number": 1
+        },
+        {
+          "duration_ms": 6928,
+          "elapsed_s": 6.930219833011506,
+          "mark_count": 2,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18574,
+            "output_tokens": 279,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18853
+          },
+          "round": 2,
+          "visible_message_count": 17,
+          "visible_text_bytes": 2169,
+          "window_number": 2
+        },
+        {
+          "duration_ms": 4357,
+          "elapsed_s": 4.359563165984582,
+          "mark_count": 3,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18688,
+            "input_tokens": 18847,
+            "output_tokens": 116,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18963
+          },
+          "round": 3,
+          "visible_message_count": 21,
+          "visible_text_bytes": 2885,
+          "window_number": 3
+        }
+      ],
+      "probe_pair_overlap_s": {
+        "r0": 4.999700707994634,
+        "r1": 7.272824458981631,
+        "r3": 7.554889834020287
+      }
+    },
+    {
+      "case_id": "post-seal-recovery",
+      "checkpoints": {
+        "long": {
+          "anchor_request_input_tokens": null,
+          "compaction_count": 0,
+          "index": null,
+          "sha256": "cf35873c8bd1accbeadd2681f6c8f1a7730528f0e70a436f97ac0c297cdc6915",
+          "snapshot_bytes": 213196
+        },
+        "r0": {
+          "anchor_request_input_tokens": 8289,
+          "compaction_count": 0,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.8218615830119234,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/post-seal-recovery; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "sha256": "8d4356cc110f798c66521ed11276b72493eed3a44794591dcdd109e3c7b1048c",
+          "snapshot_bytes": 41190
+        },
+        "r1": {
+          "anchor_request_input_tokens": 18658,
+          "compaction_count": 1,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.8218615830119234,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/post-seal-recovery; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "75548be0221d46c4390bbe7f48abc45ba33eae9a298777ec085ff5bc2c87aa34",
+          "snapshot_bytes": 126891
+        },
+        "r3": {
+          "anchor_request_input_tokens": 18650,
+          "compaction_count": 3,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.8218615830119234,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/post-seal-recovery; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "2eedee6a7ca0939cfaf9f1b0e91c9037187f6c7b57bd2d949da3e1a2d6ac9990",
+          "snapshot_bytes": 351924
+        }
+      },
+      "compactions": [
+        {
+          "duration_ms": 8981,
+          "elapsed_s": 8.983957040996756,
+          "mark_count": 1,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18683,
+            "output_tokens": 372,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 19055
+          },
+          "round": 1,
+          "visible_message_count": 13,
+          "visible_text_bytes": 1436,
+          "window_number": 1
+        },
+        {
+          "duration_ms": 4069,
+          "elapsed_s": 4.071649999998044,
+          "mark_count": 2,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18560,
+            "input_tokens": 18729,
+            "output_tokens": 112,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18841
+          },
+          "round": 2,
+          "visible_message_count": 17,
+          "visible_text_bytes": 2146,
+          "window_number": 2
+        },
+        {
+          "duration_ms": 5729,
+          "elapsed_s": 5.730933457991341,
+          "mark_count": 3,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18675,
+            "output_tokens": 165,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18840
+          },
+          "round": 3,
+          "visible_message_count": 21,
+          "visible_text_bytes": 2860,
+          "window_number": 3
+        }
+      ],
+      "probe_pair_overlap_s": {
+        "r0": 7.247271375003038,
+        "r1": 5.755728290998377,
+        "r3": 11.001261375000468
+      }
+    },
+    {
+      "case_id": "purge-restart",
+      "checkpoints": {
+        "long": {
+          "anchor_request_input_tokens": null,
+          "compaction_count": 0,
+          "index": null,
+          "sha256": "8dbf82c4a2ad6b4b8c1dca5020ab2e03fde55d196ad95c32ef9a6aee9ffe6e9e",
+          "snapshot_bytes": 213220
+        },
+        "r0": {
+          "anchor_request_input_tokens": 8290,
+          "compaction_count": 0,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.6716918330057524,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/purge-restart; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "sha256": "2d69382a2adb0a3b2cbdf085c74d5d3dbd0a0d0858898f47ae7969f62a678bbf",
+          "snapshot_bytes": 41225
+        },
+        "r1": {
+          "anchor_request_input_tokens": 18663,
+          "compaction_count": 1,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.6716918330057524,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/purge-restart; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "3682f5dc26d15df305cd4e89692190c6ecb673c5a781c677fe2154db9ff596af",
+          "snapshot_bytes": 126825
+        },
+        "r3": {
+          "anchor_request_input_tokens": 18897,
+          "compaction_count": 3,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.6716918330057524,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/purge-restart; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "31763dc93db79c2f46d0810a9067521f9d8d1a8e0c28879df88326c64db3aeff",
+          "snapshot_bytes": 362367
+        }
+      },
+      "compactions": [
+        {
+          "duration_ms": 9125,
+          "elapsed_s": 9.125993207999272,
+          "mark_count": 1,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18688,
+            "output_tokens": 339,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 19027
+          },
+          "round": 1,
+          "visible_message_count": 13,
+          "visible_text_bytes": 1498,
+          "window_number": 1
+        },
+        {
+          "duration_ms": 9711,
+          "elapsed_s": 9.714067416993203,
+          "mark_count": 2,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18689,
+            "output_tokens": 364,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 19053
+          },
+          "round": 2,
+          "visible_message_count": 17,
+          "visible_text_bytes": 2229,
+          "window_number": 2
+        },
+        {
+          "duration_ms": 14469,
+          "elapsed_s": 14.470427749998635,
+          "mark_count": 3,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18688,
+            "input_tokens": 18922,
+            "output_tokens": 647,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 19569
+          },
+          "round": 3,
+          "visible_message_count": 21,
+          "visible_text_bytes": 2950,
+          "window_number": 3
+        }
+      ],
+      "probe_pair_overlap_s": {
+        "r0": 6.24035391601501,
+        "r1": 6.706649208004819,
+        "r3": 7.975183542002924
+      }
+    },
+    {
+      "case_id": "signed-backoff",
+      "checkpoints": {
+        "long": {
+          "anchor_request_input_tokens": null,
+          "compaction_count": 0,
+          "index": null,
+          "sha256": "075ee3f411825d86d908d7113d34bd5e7add1b149a66c7007f46a577a6146f79",
+          "snapshot_bytes": 213236
+        },
+        "r0": {
+          "anchor_request_input_tokens": 8284,
+          "compaction_count": 0,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.4777954579913057,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/signed-backoff; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "sha256": "72fc55dbe3443652e66838507b5b25e2c997ffe58d1dab419a76794289853ee9",
+          "snapshot_bytes": 41115
+        },
+        "r1": {
+          "anchor_request_input_tokens": 18662,
+          "compaction_count": 1,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.4777954579913057,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/signed-backoff; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "55a2be71c26eab4403a9f6f4d95b742f70af285ea433534b1a0240440df8898d",
+          "snapshot_bytes": 124339
+        },
+        "r3": {
+          "anchor_request_input_tokens": 18826,
+          "compaction_count": 3,
+          "index": {
+            "archive_round": 0,
+            "chunks": 17,
+            "elapsed_s": 2.4777954579913057,
+            "fields_with_evidence": 7,
+            "missing_exact_source_excerpts": {
+              "recent": [
+                "I’m on branch fix/signed-backoff; keep the regression notes tied to that working branch."
+              ]
+            },
+            "vectors": 17
+          },
+          "older_fields_with_all_exact_evidence_visible": [],
+          "sha256": "6025fe1a48fd9269ce9b677a24b3b045be8211a92104dc8f8ec28950f2602210",
+          "snapshot_bytes": 354274
+        }
+      },
+      "compactions": [
+        {
+          "duration_ms": 5844,
+          "elapsed_s": 5.845403624989558,
+          "mark_count": 1,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18432,
+            "input_tokens": 18687,
+            "output_tokens": 184,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18871
+          },
+          "round": 1,
+          "visible_message_count": 13,
+          "visible_text_bytes": 1423,
+          "window_number": 1
+        },
+        {
+          "duration_ms": 8557,
+          "elapsed_s": 8.558915792003972,
+          "mark_count": 2,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18304,
+            "input_tokens": 18532,
+            "output_tokens": 290,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 18822
+          },
+          "round": 2,
+          "visible_message_count": 17,
+          "visible_text_bytes": 2140,
+          "window_number": 2
+        },
+        {
+          "duration_ms": 8319,
+          "elapsed_s": 8.320964332990116,
+          "mark_count": 3,
+          "opaque_items": 1,
+          "provider_usage": {
+            "cache_write_input_tokens": 0,
+            "cached_input_tokens": 18688,
+            "input_tokens": 18851,
+            "output_tokens": 339,
+            "reasoning_output_tokens": 0,
+            "total_tokens": 19190
+          },
+          "round": 3,
+          "visible_message_count": 21,
+          "visible_text_bytes": 2880,
+          "window_number": 3
+        }
+      ],
+      "probe_pair_overlap_s": {
+        "r0": 7.775523292017169,
+        "r1": 10.66402983298758,
+        "r3": 8.594408959004795
+      }
+    }
+  ],
+  "schema_version": 1
+}
